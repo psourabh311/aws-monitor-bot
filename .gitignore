@@ -1,0 +1,5 @@
+.env
+aws_bot_env/
+__pycache__/
+*.pyc
+*.pem
