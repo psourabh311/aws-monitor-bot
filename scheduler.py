@@ -20,7 +20,7 @@ class AlertScheduler:
         print("✅ AlertScheduler initialized!")
 
     def start(self):
-        """Scheduler start karo - 2 jobs add karo"""
+        """Scheduler start karo - 3 jobs add karo"""
 
         # Job 1: Har 1 minute mein alerts check karo
         self.scheduler.add_job(
@@ -32,8 +32,6 @@ class AlertScheduler:
         )
 
         # Job 2: Har subah 9 baje daily summary bhejo
-        # CronTrigger = specific time pe trigger karta hai
-        # hour=9, minute=0 = 9:00 AM
         self.scheduler.add_job(
             self.send_daily_summary_all,
             CronTrigger(hour=9, minute=0),
@@ -41,14 +39,104 @@ class AlertScheduler:
             name='Daily Summary'
         )
 
+        # Job 3: Har Monday subah 9 baje weekly report bhejo
+        self.scheduler.add_job(
+            self.send_weekly_report_all,
+            CronTrigger(day_of_week='mon', hour=9, minute=0),
+            id='weekly_report',
+            name='Weekly Cost Report'
+        )
+
         self.scheduler.start()
         print("✅ Scheduler started!")
         print("   - Har 1 minute mein alerts check hoga")
         print("   - Har subah 9 baje daily summary jayegi")
+        print("   - Har Monday 9 baje weekly report jayegi")
 
     def stop(self):
         self.scheduler.shutdown()
         print("✅ Scheduler stopped.")
+
+    # ─────────────────────────────────────────
+    # WEEKLY REPORT
+    # ─────────────────────────────────────────
+
+    async def send_weekly_report_all(self):
+        """Saare users ko weekly report bhejo"""
+        print(f"📊 Weekly report bhej raha hoon... {datetime.now().strftime('%H:%M:%S')}")
+
+        conn = self.db._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT user_id, first_name FROM users")
+            users = cursor.fetchall()
+        finally:
+            cursor.close()
+            self.db._put_conn(conn)
+
+        for user in users:
+            try:
+                await self.send_weekly_report(user[0], user[1])
+            except Exception as e:
+                print(f"❌ Weekly report failed for {user[0]}: {e}")
+
+    async def send_weekly_report(self, user_id, first_name):
+        """Ek user ko weekly cost comparison bhejo"""
+        accounts = self.db.get_aws_accounts(user_id)
+        if not accounts:
+            return
+
+        account = accounts[0]
+        creds = self.db.get_aws_credentials(account['account_id'])
+        if not creds:
+            return
+
+        try:
+            monitor = AWSMonitor(
+                access_key=creds['access_key'],
+                secret_key=creds['secret_key'],
+                region=creds['region']
+            )
+
+            this_week, last_week = monitor.get_weekly_costs()
+
+            if this_week is None:
+                return
+
+            # Difference calculate karo
+            diff = this_week - last_week
+
+            if last_week > 0:
+                percent = round((diff / last_week) * 100, 1)
+            else:
+                percent = 0
+
+            # Trend icon
+            if diff > 0:
+                trend = f"📈 +${diff:.2f} ({percent}% ↑) - Cost badh rahi hai!"
+            elif diff < 0:
+                trend = f"📉 -${abs(diff):.2f} ({abs(percent)}% ↓) - Cost kam hui! 🎉"
+            else:
+                trend = "➡️ Same as last week"
+
+            message = f"📊 *Weekly Cost Report*\n"
+            message += f"👋 Hello {first_name}!\n\n"
+            message += f"━━━━━━━━━━━━━━━━━━\n"
+            message += f"📅 This Week:  *${this_week:.2f}*\n"
+            message += f"📅 Last Week:  *${last_week:.2f}*\n"
+            message += f"━━━━━━━━━━━━━━━━━━\n"
+            message += f"{trend}\n\n"
+            message += f"🌍 Account: {account['account_name']}"
+
+            await self.bot.send_message(
+                chat_id=user_id,
+                text=message,
+                parse_mode='Markdown'
+            )
+            print(f"✅ Weekly report sent to {first_name}")
+
+        except Exception as e:
+            print(f"❌ Error sending weekly report to {user_id}: {e}")
 
     # ─────────────────────────────────────────
     # DAILY SUMMARY

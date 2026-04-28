@@ -74,19 +74,37 @@ def alert_menu_keyboard():
         [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]
     ])
 
+def account_select_keyboard(accounts, action):
+    """Account select karne ke buttons - action = 'status' ya 'costs'"""
+    buttons = []
+    for acc in accounts:
+        buttons.append([
+            InlineKeyboardButton(
+                f"🖥️ {acc['account_name']} ({acc['aws_region']})",
+                callback_data=f"{action}_acc_{acc['account_id']}"
+            )
+        ])
+    buttons.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+    return InlineKeyboardMarkup(buttons)
+
 
 # ─────────────────────────────────────────
 # HELPER FUNCTIONS
 # ─────────────────────────────────────────
 
-async def get_status_message(user_id):
-    """AWS status message banao"""
+async def get_status_message(user_id, account_id=None):
+    """AWS status message banao - specific account ke liye"""
     accounts = db.get_aws_accounts(user_id)
 
     if not accounts:
         return "❌ Koi AWS account connected nahi hai!\n\n🔗 Add Account button use karo.", None
 
-    account = accounts[0]
+    # Agar account_id diya hai to wo use karo, warna pehla
+    if account_id:
+        account = next((a for a in accounts if a['account_id'] == account_id), accounts[0])
+    else:
+        account = accounts[0]
+
     creds = db.get_aws_credentials(account['account_id'])
 
     if not creds:
@@ -113,20 +131,39 @@ async def get_status_message(user_id):
 
         from datetime import datetime
         message += f"\n🕐 Updated: {datetime.now().strftime('%H:%M:%S')}"
-        return message, status_keyboard()
+
+        # Agar multiple accounts hain to switch button bhi dikhao
+        keyboard_buttons = [
+            [
+                InlineKeyboardButton("🔄 Refresh", callback_data=f"status_acc_{account['account_id']}"),
+                InlineKeyboardButton("💰 Check Costs", callback_data=f"costs_acc_{account['account_id']}")
+            ]
+        ]
+        if len(accounts) > 1:
+            keyboard_buttons.append([
+                InlineKeyboardButton("🔀 Switch Account", callback_data="select_account_status")
+            ])
+        keyboard_buttons.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+
+        return message, InlineKeyboardMarkup(keyboard_buttons)
 
     except Exception as e:
         return f"❌ Error: {str(e)}", back_to_menu_keyboard()
 
 
-async def get_costs_message(user_id):
-    """AWS costs message banao"""
+async def get_costs_message(user_id, account_id=None):
+    """AWS costs message banao - specific account ke liye"""
     accounts = db.get_aws_accounts(user_id)
 
     if not accounts:
         return "❌ Koi AWS account connected nahi hai!\n\n🔗 Add Account button use karo.", None
 
-    account = accounts[0]
+    # Agar account_id diya hai to wo use karo, warna pehla
+    if account_id:
+        account = next((a for a in accounts if a['account_id'] == account_id), accounts[0])
+    else:
+        account = accounts[0]
+
     creds = db.get_aws_credentials(account['account_id'])
 
     try:
@@ -138,7 +175,20 @@ async def get_costs_message(user_id):
         message += f"📅 Aaj ka cost: *${today_cost:.2f}*\n" if today_cost is not None else "📅 Aaj ka cost: N/A\n"
         message += f"📆 Is mahine ka cost: *${month_cost:.2f}*\n" if month_cost is not None else "📆 Is mahine ka cost: N/A\n"
 
-        return message, costs_keyboard()
+        # Agar multiple accounts hain to switch button bhi dikhao
+        keyboard_buttons = [
+            [
+                InlineKeyboardButton("🔄 Refresh", callback_data=f"costs_acc_{account['account_id']}"),
+                InlineKeyboardButton("📊 Check Status", callback_data=f"status_acc_{account['account_id']}")
+            ]
+        ]
+        if len(accounts) > 1:
+            keyboard_buttons.append([
+                InlineKeyboardButton("🔀 Switch Account", callback_data="select_account_costs")
+            ])
+        keyboard_buttons.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+
+        return message, InlineKeyboardMarkup(keyboard_buttons)
 
     except Exception as e:
         return f"❌ Error: {str(e)}", back_to_menu_keyboard()
@@ -197,6 +247,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=keyboard
         )
 
+    # ── Status specific account ──
+    elif data.startswith("status_acc_"):
+        account_id = int(data.split("_")[2])
+        await query.edit_message_text("🔄 AWS se data fetch kar raha hoon...")
+        message, keyboard = await get_status_message(user_id, account_id)
+        await query.edit_message_text(
+            message,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+
+    # ── Select account for status ──
+    elif data == "select_account_status":
+        accounts = db.get_aws_accounts(user_id)
+        await query.edit_message_text(
+            "🔀 *Kaunsa account check karna hai?*",
+            parse_mode='Markdown',
+            reply_markup=account_select_keyboard(accounts, "status")
+        )
+
     # ── Costs ──
     elif data == "show_costs":
         await query.edit_message_text("🔄 Cost data fetch kar raha hoon...")
@@ -205,6 +275,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message,
             parse_mode='Markdown',
             reply_markup=keyboard
+        )
+
+    # ── Costs specific account ──
+    elif data.startswith("costs_acc_"):
+        account_id = int(data.split("_")[2])
+        await query.edit_message_text("🔄 Cost data fetch kar raha hoon...")
+        message, keyboard = await get_costs_message(user_id, account_id)
+        await query.edit_message_text(
+            message,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+
+    # ── Select account for costs ──
+    elif data == "select_account_costs":
+        accounts = db.get_aws_accounts(user_id)
+        await query.edit_message_text(
+            "🔀 *Kaunsa account ka cost dekhna hai?*",
+            parse_mode='Markdown',
+            reply_markup=account_select_keyboard(accounts, "costs")
         )
 
     # ── Alert Menu ──

@@ -203,6 +203,56 @@ class AWSMonitor:
             return None
 
 
+    def get_weekly_costs(self):
+        """
+        Is hafte aur pichle hafte ka cost nikalo comparison ke liye.
+        Returns: (this_week_cost, last_week_cost)
+        """
+        try:
+            today = datetime.now()
+
+            # Is hafte - last 7 days
+            this_week_start = (today - timedelta(days=7)).strftime('%Y-%m-%d')
+            this_week_end = (today + timedelta(days=1)).strftime('%Y-%m-%d')
+
+            # Pichla hafte - 8 to 14 days ago
+            last_week_start = (today - timedelta(days=14)).strftime('%Y-%m-%d')
+            last_week_end = (today - timedelta(days=7)).strftime('%Y-%m-%d')
+
+            # Is hafte ka cost
+            r1 = self.cost_explorer.get_cost_and_usage(
+                TimePeriod={'Start': this_week_start, 'End': this_week_end},
+                Granularity='DAILY',
+                Metrics=['UnblendedCost']
+            )
+
+            # Pichle hafte ka cost
+            r2 = self.cost_explorer.get_cost_and_usage(
+                TimePeriod={'Start': last_week_start, 'End': last_week_end},
+                Granularity='DAILY',
+                Metrics=['UnblendedCost']
+            )
+
+            # Saare daily costs add karo
+            this_week = sum(
+                float(day['Total']['UnblendedCost']['Amount'])
+                for day in r1['ResultsByTime']
+            )
+            last_week = sum(
+                float(day['Total']['UnblendedCost']['Amount'])
+                for day in r2['ResultsByTime']
+            )
+
+            return round(this_week, 2), round(last_week, 2)
+
+        except ClientError as e:
+            print(f"❌ Weekly cost error: {e.response['Error']['Code']}")
+            return None, None
+        except Exception as e:
+            print(f"❌ Error fetching weekly costs: {e}")
+            return None, None
+
+
 # Test - AWS credentials chahiye honge
 if __name__ == '__main__':
     print("AWS Monitor Test\n")
