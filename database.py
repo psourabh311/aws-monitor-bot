@@ -255,6 +255,64 @@ class Database:
             cursor.close()
             self._put_conn(conn)
 
+    # ─────────────────────────────────────────
+    # SUBSCRIPTION OPERATIONS
+    # ─────────────────────────────────────────
+
+    def get_user_plan(self, user_id):
+        """User ka current plan nikalo - default free"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT plan_name FROM subscriptions
+                WHERE user_id = %s AND is_active = true
+                AND (end_date IS NULL OR end_date > NOW())
+                ORDER BY start_date DESC LIMIT 1
+            """, (user_id,))
+            row = cursor.fetchone()
+            return row[0] if row else 'free'
+        except Exception as e:
+            print(f"❌ Error fetching plan: {e}")
+            return 'free'
+        finally:
+            cursor.close()
+            self._put_conn(conn)
+
+    def create_subscription(self, user_id, plan_name, payment_link_id):
+        """Naya subscription create karo"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            from datetime import datetime, timedelta
+            end_date = datetime.now() + timedelta(days=30)
+
+            # Purana subscription deactivate karo
+            cursor.execute("""
+                UPDATE subscriptions SET is_active = false
+                WHERE user_id = %s
+            """, (user_id,))
+
+            # Naya subscription add karo
+            cursor.execute("""
+                INSERT INTO subscriptions
+                    (user_id, plan_name, payment_link_id, end_date)
+                VALUES (%s, %s, %s, %s)
+                RETURNING sub_id
+            """, (user_id, plan_name, payment_link_id, end_date))
+
+            sub_id = cursor.fetchone()[0]
+            conn.commit()
+            print(f"✅ Subscription created! ID: {sub_id}")
+            return sub_id
+        except Exception as e:
+            conn.rollback()
+            print(f"❌ Error creating subscription: {e}")
+            return None
+        finally:
+            cursor.close()
+            self._put_conn(conn)
+
     def close(self):
         """Sab connections band karo"""
         self.pool.closeall()

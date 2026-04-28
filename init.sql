@@ -39,3 +39,14 @@ CREATE TABLE IF NOT EXISTS alert_configs (
 
 -- Confirm message
 SELECT 'Tables created successfully!' AS status;
+
+-- Subscriptions table
+CREATE TABLE IF NOT EXISTS subscriptions (
+    sub_id          SERIAL PRIMARY KEY,
+    user_id         BIGINT REFERENCES users(user_id),
+    plan_name       VARCHAR(20) DEFAULT 'free',
+    payment_link_id VARCHAR(100),
+    start_date      TIMESTAMP DEFAULT NOW(),
+    end_date        TIMESTAMP,
+    is_active       BOOLEAN DEFAULT true
+);

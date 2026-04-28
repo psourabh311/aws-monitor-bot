@@ -6,12 +6,14 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from database import Database
 from aws_monitor import AWSMonitor
 from scheduler import AlertScheduler
+from subscription import SubscriptionManager, PLANS
 
 # .env file load karo
 load_dotenv()
 
 # Database ek baar initialize karo
 db = Database()
+sub_manager = SubscriptionManager()
 
 
 # ─────────────────────────────────────────
@@ -34,7 +36,8 @@ def main_menu_keyboard():
             InlineKeyboardButton("📁 My Accounts", callback_data="list_accounts")
         ],
         [
-            InlineKeyboardButton("❓ Help", callback_data="show_help")
+            InlineKeyboardButton("❓ Help", callback_data="show_help"),
+            InlineKeyboardButton("💎 Upgrade", callback_data="show_upgrade")
         ]
     ])
 
@@ -397,6 +400,103 @@ _Agar CPU 80% se zyada ho - har 30 min check_"""
             parse_mode='Markdown',
             reply_markup=back_to_menu_keyboard()
         )
+
+    # ── Upgrade ──
+    elif data == "show_upgrade":
+        current_plan = db.get_user_plan(user_id)
+        free = PLANS['free']
+        premium = PLANS['premium']
+
+        message = f"💎 *Upgrade to Premium*\n\n"
+        message += f"Your current plan: *{current_plan.upper()}*\n\n"
+        message += f"━━━━━━━━━━━━━━━━━━\n"
+        message += f"🆓 *FREE Plan* (Current)\n"
+        for f in free['features']:
+            message += f"  • {f}\n"
+        message += f"\n⭐ *PREMIUM - ₹{premium['price']}/month*\n"
+        for f in premium['features']:
+            message += f"  • {f}\n"
+        message += f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        if current_plan == 'premium':
+            message += "✅ You are already on Premium!"
+            await query.edit_message_text(
+                message,
+                parse_mode='Markdown',
+                reply_markup=back_to_menu_keyboard()
+            )
+        else:
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("⭐ Buy Premium - ₹499/month", callback_data="buy_premium")],
+                [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]
+            ])
+            await query.edit_message_text(
+                message,
+                parse_mode='Markdown',
+                reply_markup=keyboard
+            )
+
+    # ── Buy Premium ──
+    elif data == "buy_premium":
+        await query.edit_message_text("🔄 Payment link generate kar raha hoon...")
+
+        payment_url, link_id = sub_manager.create_payment_link(
+            user_id=user_id,
+            plan_name='premium',
+            amount=499
+        )
+
+        if payment_url:
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("💳 Pay Now - ₹499", url=payment_url)],
+                [InlineKeyboardButton("✅ Payment Done", callback_data=f"verify_{link_id}")],
+                [InlineKeyboardButton("⬅️ Back", callback_data="show_upgrade")]
+            ])
+            await query.edit_message_text(
+                f"💳 *Premium Subscription*\n\n"
+                f"Amount: *₹499/month*\n\n"
+                f"1. Neeche Pay Now button click karo\n"
+                f"2. Payment complete karo\n"
+                f"3. Wapas aake ✅ Payment Done click karo\n\n"
+                f"⚠️ Test mode mein fake card use karo:\n"
+                f"Card: `4111 1111 1111 1111`\n"
+                f"Expiry: Any future date\n"
+                f"CVV: Any 3 digits",
+                parse_mode='Markdown',
+                reply_markup=keyboard
+            )
+        else:
+            await query.edit_message_text(
+                "❌ Payment link generate nahi hua!\nDobara try karo.",
+                reply_markup=back_to_menu_keyboard()
+            )
+
+    # ── Verify Payment ──
+    elif data.startswith("verify_"):
+        link_id = data.replace("verify_", "")
+        await query.edit_message_text("🔄 Payment verify kar raha hoon...")
+
+        if sub_manager.verify_payment(link_id):
+            db.create_subscription(user_id, 'premium', link_id)
+            await query.edit_message_text(
+                "🎉 *Payment Successful!*\n\n"
+                "✅ Premium plan activated!\n\n"
+                "*Your benefits:*\n"
+                "• 5 AWS accounts\n"
+                "• 50 alerts\n"
+                "• 5 minute checks\n"
+                "• Weekly reports\n"
+                "• Anomaly detection\n\n"
+                "Thank you! 💎",
+                parse_mode='Markdown',
+                reply_markup=main_menu_keyboard()
+            )
+        else:
+            await query.edit_message_text(
+                "❌ Payment verify nahi hua!\n\n"
+                "Payment complete karne ke baad try karo.",
+                reply_markup=back_to_menu_keyboard()
+            )
 
     # ── Help ──
     elif data == "show_help":
