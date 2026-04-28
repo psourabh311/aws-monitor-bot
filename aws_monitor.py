@@ -203,6 +203,31 @@ class AWSMonitor:
             return None
 
 
+    def get_yesterday_cost(self):
+        """Kal ka cost nikalo anomaly detection ke liye"""
+        try:
+            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+            today = datetime.now().strftime('%Y-%m-%d')
+
+            response = self.cost_explorer.get_cost_and_usage(
+                TimePeriod={'Start': yesterday, 'End': today},
+                Granularity='DAILY',
+                Metrics=['UnblendedCost']
+            )
+
+            if response['ResultsByTime']:
+                amount = response['ResultsByTime'][0]['Total']['UnblendedCost']['Amount']
+                return round(float(amount), 2)
+
+            return 0.0
+
+        except ClientError as e:
+            print(f"❌ Yesterday cost error: {e.response['Error']['Code']}")
+            return None
+        except Exception as e:
+            print(f"❌ Error fetching yesterday cost: {e}")
+            return None
+
     def get_weekly_costs(self):
         """
         Is hafte aur pichle hafte ka cost nikalo comparison ke liye.

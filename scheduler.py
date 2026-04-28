@@ -47,15 +47,104 @@ class AlertScheduler:
             name='Weekly Cost Report'
         )
 
+        # Job 4: Har 6 ghante mein cost anomaly check karo
+        self.scheduler.add_job(
+            self.check_cost_anomaly_all,
+            'interval',
+            hours=6,
+            id='anomaly_checker',
+            name='Cost Anomaly Check'
+        )
+
         self.scheduler.start()
         print("✅ Scheduler started!")
         print("   - Har 1 minute mein alerts check hoga")
         print("   - Har subah 9 baje daily summary jayegi")
         print("   - Har Monday 9 baje weekly report jayegi")
+        print("   - Har 6 ghante mein cost anomaly check hoga")
 
     def stop(self):
         self.scheduler.shutdown()
         print("✅ Scheduler stopped.")
+
+    # ─────────────────────────────────────────
+    # COST ANOMALY DETECTION
+    # ─────────────────────────────────────────
+
+    async def check_cost_anomaly_all(self):
+        """Saare users ke liye cost anomaly check karo"""
+        print(f"🔍 Cost anomaly check... {datetime.now().strftime('%H:%M:%S')}")
+
+        conn = self.db._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT user_id, first_name FROM users")
+            users = cursor.fetchall()
+        finally:
+            cursor.close()
+            self.db._put_conn(conn)
+
+        for user in users:
+            try:
+                await self.check_cost_anomaly(user[0], user[1])
+            except Exception as e:
+                print(f"❌ Anomaly check failed for {user[0]}: {e}")
+
+    async def check_cost_anomaly(self, user_id, first_name):
+        """
+        Ek user ka cost anomaly check karo.
+        Agar aaj ka cost kal se 2x zyada ho to alert bhejo.
+        """
+        accounts = self.db.get_aws_accounts(user_id)
+        if not accounts:
+            return
+
+        account = accounts[0]
+        creds = self.db.get_aws_credentials(account['account_id'])
+        if not creds:
+            return
+
+        try:
+            monitor = AWSMonitor(
+                access_key=creds['access_key'],
+                secret_key=creds['secret_key'],
+                region=creds['region']
+            )
+
+            today_cost = monitor.get_today_cost()
+            yesterday_cost = monitor.get_yesterday_cost()
+
+            if today_cost is None or yesterday_cost is None:
+                return
+
+            # Agar kal ka cost $1 se kam tha to skip karo
+            # (small amounts mein percentage misleading hoti hai)
+            if yesterday_cost < 1.0:
+                return
+
+            # 2x threshold - agar aaj kal se double ho
+            if today_cost >= yesterday_cost * 2:
+                increase_percent = round(((today_cost - yesterday_cost) / yesterday_cost) * 100, 1)
+
+                message = f"🚨 *Cost Anomaly Detected!*\n\n"
+                message += f"📈 Aaj ka cost: *${today_cost:.2f}*\n"
+                message += f"📉 Kal ka cost: *${yesterday_cost:.2f}*\n"
+                message += f"⚠️ Increase: *{increase_percent}% ↑*\n\n"
+                message += f"Kuch unusual chal raha hai!\n"
+                message += f"AWS Console check karo.\n\n"
+                message += f"🌍 Account: {account['account_name']}"
+
+                await self.bot.send_message(
+                    chat_id=user_id,
+                    text=message,
+                    parse_mode='Markdown'
+                )
+                print(f"🚨 Anomaly alert sent to {first_name} - Today: ${today_cost}, Yesterday: ${yesterday_cost}")
+            else:
+                print(f"   ✅ {first_name} - No anomaly. Today: ${today_cost}, Yesterday: ${yesterday_cost}")
+
+        except Exception as e:
+            print(f"❌ Error checking anomaly for {user_id}: {e}")
 
     # ─────────────────────────────────────────
     # WEEKLY REPORT
