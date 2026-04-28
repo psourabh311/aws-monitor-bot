@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from database import Database
 from aws_monitor import AWSMonitor
 
@@ -8,47 +9,132 @@ from aws_monitor import AWSMonitor
 class AlertScheduler:
     """
     Background mein automatically AWS check karta hai.
-    Agar threshold cross ho to Telegram pe alert bhejta hai.
+    1. Har 1 minute mein alerts check karta hai
+    2. Har subah 9 baje daily summary bhejta hai
     """
 
     def __init__(self, bot):
-        # Telegram bot instance - alerts bhejne ke liye
         self.bot = bot
-
-        # Database - alert configs aur credentials ke liye
         self.db = Database()
-
-        # AsyncIOScheduler - background timer
-        # Alternative: threading.Timer - but asyncio bot ke saath better kaam karta hai
         self.scheduler = AsyncIOScheduler()
-
         print("✅ AlertScheduler initialized!")
 
     def start(self):
-        """Scheduler start karo - har 1 minute mein check karega"""
+        """Scheduler start karo - 2 jobs add karo"""
+
+        # Job 1: Har 1 minute mein alerts check karo
         self.scheduler.add_job(
-            self.check_all_alerts,       # Ye function run hoga
-            'interval',                   # Type: interval based
-            minutes=1,                    # Har 1 minute mein
+            self.check_all_alerts,
+            'interval',
+            minutes=1,
             id='alert_checker',
             name='Check All Alerts'
         )
+
+        # Job 2: Har subah 9 baje daily summary bhejo
+        # CronTrigger = specific time pe trigger karta hai
+        # hour=9, minute=0 = 9:00 AM
+        self.scheduler.add_job(
+            self.send_daily_summary_all,
+            CronTrigger(hour=9, minute=0),
+            id='daily_summary',
+            name='Daily Summary'
+        )
+
         self.scheduler.start()
-        print("✅ Scheduler started! Har 1 minute mein alerts check hoga.")
+        print("✅ Scheduler started!")
+        print("   - Har 1 minute mein alerts check hoga")
+        print("   - Har subah 9 baje daily summary jayegi")
 
     def stop(self):
-        """Scheduler band karo"""
         self.scheduler.shutdown()
         print("✅ Scheduler stopped.")
 
+    # ─────────────────────────────────────────
+    # DAILY SUMMARY
+    # ─────────────────────────────────────────
+
+    async def send_daily_summary_all(self):
+        """Saare users ko daily summary bhejo"""
+        print(f"🌅 Daily summary bhej raha hoon... {datetime.now().strftime('%H:%M:%S')}")
+
+        # Database se saare users nikalo
+        conn = self.db._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT user_id, first_name FROM users")
+            users = cursor.fetchall()
+        finally:
+            cursor.close()
+            self.db._put_conn(conn)
+
+        for user in users:
+            try:
+                await self.send_daily_summary(user[0], user[1])
+            except Exception as e:
+                print(f"❌ Summary send failed for user {user[0]}: {e}")
+
+    async def send_daily_summary(self, user_id, first_name):
+        """Ek user ko daily summary bhejo"""
+        accounts = self.db.get_aws_accounts(user_id)
+
+        if not accounts:
+            return  # Koi account nahi - summary mat bhejo
+
+        account = accounts[0]
+        creds = self.db.get_aws_credentials(account['account_id'])
+
+        if not creds:
+            return
+
+        try:
+            monitor = AWSMonitor(
+                access_key=creds['access_key'],
+                secret_key=creds['secret_key'],
+                region=creds['region']
+            )
+
+            # Data fetch karo
+            instances = monitor.get_ec2_instances()
+            today_cost = monitor.get_today_cost()
+            month_cost = monitor.get_month_cost()
+            alerts = self.db.get_user_alerts(user_id)
+
+            # Message banao
+            message = f"🌅 *Good Morning {first_name}!*\n\n"
+            message += f"� *Daily AWS Summary*\n"
+            message += f"━━━━━━━━━━━━━━━━━━\n"
+            message += f"🖥️ EC2 Instances: *{len(instances)} running*\n"
+
+            if today_cost is not None:
+                message += f"💰 Today's Cost: *${today_cost:.2f}*\n"
+
+            if month_cost is not None:
+                message += f"📆 Month so far: *${month_cost:.2f}*\n"
+
+            message += f"🔔 Active Alerts: *{len(alerts)}*\n"
+            message += f"━━━━━━━━━━━━━━━━━━\n"
+            message += f"🌍 Account: {account['account_name']} ({creds['region']})\n\n"
+            message += f"Have a great day! ☀️"
+
+            await self.bot.send_message(
+                chat_id=user_id,
+                text=message,
+                parse_mode='Markdown'
+            )
+            print(f"✅ Daily summary sent to {first_name} ({user_id})")
+
+        except Exception as e:
+            print(f"❌ Error sending summary to {user_id}: {e}")
+
+    # ─────────────────────────────────────────
+    # ALERT CHECKER
+    # ─────────────────────────────────────────
+
     async def check_all_alerts(self):
-        """
-        Saare active alerts check karo.
-        Ye function har 1 minute mein automatically chalega.
-        """
+        """Saare active alerts check karo"""
         print(f"🔍 Alerts check kar raha hoon... {datetime.now().strftime('%H:%M:%S')}")
 
-        # Database se saare active alerts nikalo
         alerts = self.db.get_all_active_alerts()
 
         if not alerts:
@@ -59,37 +145,32 @@ class AlertScheduler:
             try:
                 await self.check_single_alert(alert)
             except Exception as e:
-                print(f"❌ Alert {alert['config_id']} check karne mein error: {e}")
+                print(f"❌ Alert {alert['config_id']} error: {e}")
 
     async def check_single_alert(self, alert):
-        """Ek alert check karo aur zarurat padne par notify karo"""
-
-        # AWS credentials nikalo
+        """Ek alert check karo"""
         creds = self.db.get_aws_credentials(alert['account_id'])
         if not creds:
             return
 
-        # AWS Monitor initialize karo
         monitor = AWSMonitor(
             access_key=creds['access_key'],
             secret_key=creds['secret_key'],
             region=creds['region']
         )
 
-        # Metric ki current value nikalo
         current_value = self.get_metric_value(monitor, alert['metric_name'])
         if current_value is None:
             return
 
         print(f"   {alert['metric_name']}: {current_value} {alert['comparison_operator']} {alert['threshold_value']}")
 
-        # Threshold cross hua?
         if self.is_threshold_crossed(current_value, alert['threshold_value'], alert['comparison_operator']):
             print(f"   🚨 Alert triggered! Notifying user {alert['user_id']}")
             await self.send_alert(alert, current_value)
 
     def get_metric_value(self, monitor, metric_name):
-        """Metric ka current value fetch karo AWS se"""
+        """Metric ka current value fetch karo"""
         if metric_name == 'daily_cost':
             return monitor.get_today_cost()
         elif metric_name == 'monthly_cost':
@@ -98,7 +179,6 @@ class AlertScheduler:
             instances = monitor.get_ec2_instances()
             if not instances:
                 return 0.0
-            # Saare instances ka average CPU
             total = 0
             count = 0
             for inst in instances:
@@ -110,7 +190,7 @@ class AlertScheduler:
         return None
 
     def is_threshold_crossed(self, current, threshold, operator):
-        """Check karo threshold cross hua ya nahi"""
+        """Threshold cross hua ya nahi"""
         if operator == '>':
             return current > threshold
         elif operator == '<':
@@ -123,7 +203,7 @@ class AlertScheduler:
 
     async def send_alert(self, alert, current_value):
         """User ko Telegram pe alert bhejo"""
-        message = f"""🚨 ALERT TRIGGERED!
+        message = f"""🚨 *ALERT TRIGGERED!*
 
 📊 Metric: {alert['metric_name']}
 📈 Current Value: {current_value}
@@ -131,12 +211,13 @@ class AlertScheduler:
 
 🕐 Time: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}
 
-/status se details dekho."""
+/start se dashboard dekho."""
 
         try:
             await self.bot.send_message(
                 chat_id=alert['user_id'],
-                text=message
+                text=message,
+                parse_mode='Markdown'
             )
             print(f"   ✅ Alert sent to user {alert['user_id']}")
         except Exception as e:
