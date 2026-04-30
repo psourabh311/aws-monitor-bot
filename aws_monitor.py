@@ -4,53 +4,25 @@ from botocore.exceptions import ClientError, NoCredentialsError
 
 
 class AWSMonitor:
-    """AWS se data fetch karta hai - EC2, CloudWatch, Cost Explorer"""
+    """AWS se data fetch karta hai - EC2, CloudWatch, Cost Explorer, RDS, S3"""
 
     def __init__(self, access_key, secret_key, region='ap-south-1'):
-        """
-        3 AWS clients banao:
-        - ec2: instances ki list ke liye
-        - cloudwatch: CPU aur metrics ke liye
-        - cost_explorer: billing data ke liye
-        """
         try:
-            self.ec2 = boto3.client(
-                'ec2',
-                aws_access_key_id=access_key,
-                aws_secret_access_key=secret_key,
-                region_name=region
-            )
+            self.ec2 = boto3.client('ec2', aws_access_key_id=access_key,
+                                    aws_secret_access_key=secret_key, region_name=region)
 
-            self.cloudwatch = boto3.client(
-                'cloudwatch',
-                aws_access_key_id=access_key,
-                aws_secret_access_key=secret_key,
-                region_name=region
-            )
+            self.cloudwatch = boto3.client('cloudwatch', aws_access_key_id=access_key,
+                                           aws_secret_access_key=secret_key, region_name=region)
 
-            # Cost Explorer sirf us-east-1 mein kaam karta hai - AWS ka rule hai
-            self.cost_explorer = boto3.client(
-                'ce',
-                aws_access_key_id=access_key,
-                aws_secret_access_key=secret_key,
-                region_name='us-east-1'
-            )
+            # Cost Explorer sirf us-east-1 mein kaam karta hai
+            self.cost_explorer = boto3.client('ce', aws_access_key_id=access_key,
+                                              aws_secret_access_key=secret_key, region_name='us-east-1')
 
-            # RDS client (databases ke liye)
-            self.rds = boto3.client(
-                'rds',
-                aws_access_key_id=access_key,
-                aws_secret_access_key=secret_key,
-                region_name=region
-            )
+            self.rds = boto3.client('rds', aws_access_key_id=access_key,
+                                    aws_secret_access_key=secret_key, region_name=region)
 
-            # RDS client (databases ke liye)
-            self.rds = boto3.client(
-                'rds',
-                aws_access_key_id=access_key,
-                aws_secret_access_key=secret_key,
-                region_name=region
-            )
+            self.s3 = boto3.client('s3', aws_access_key_id=access_key,
+                                   aws_secret_access_key=secret_key, region_name=region)
 
             self.region = region
             print(f"✅ AWSMonitor ready! Region: {region}")
@@ -60,10 +32,7 @@ class AWSMonitor:
             raise
 
     def test_connection(self):
-        """
-        AWS credentials sahi hain ya nahi check karo.
-        EC2 regions ki list maango - simple aur fast test hai.
-        """
+        """AWS credentials test karo"""
         try:
             self.ec2.describe_regions(RegionNames=[self.region])
             return True
@@ -76,44 +45,32 @@ class AWSMonitor:
             else:
                 print(f"❌ AWS error: {error_code}")
             return False
-        except NoCredentialsError:
-            print("❌ Credentials provide nahi kiye!")
-            return False
         except Exception as e:
             print(f"❌ Connection test failed: {e}")
             return False
 
     def get_ec2_instances(self):
-        """
-        Sirf RUNNING EC2 instances ki list do.
-        Har instance ka: ID, naam, type, state.
-        """
+        """Running EC2 instances ki list"""
         try:
             response = self.ec2.describe_instances(
                 Filters=[{'Name': 'instance-state-name', 'Values': ['running']}]
             )
-
             instances = []
             for reservation in response['Reservations']:
                 for instance in reservation['Instances']:
-
-                    # Instance ka naam Tags mein hota hai
                     name = 'No Name'
                     if 'Tags' in instance:
                         for tag in instance['Tags']:
                             if tag['Key'] == 'Name':
                                 name = tag['Value']
                                 break
-
                     instances.append({
                         'id': instance['InstanceId'],
                         'name': name,
                         'type': instance['InstanceType'],
                         'state': instance['State']['Name']
                     })
-
             return instances
-
         except ClientError as e:
             print(f"❌ EC2 error: {e.response['Error']['Code']}")
             return []
@@ -122,67 +79,45 @@ class AWSMonitor:
             return []
 
     def get_cpu_utilization(self, instance_id, hours=1):
-        """
-        CloudWatch se ek instance ka average CPU usage nikalo.
-        Last 1 ghante ka average deta hai.
-        """
+        """EC2 instance ka CPU usage"""
         try:
             end_time = datetime.utcnow()
             start_time = end_time - timedelta(hours=hours)
-
             response = self.cloudwatch.get_metric_statistics(
                 Namespace='AWS/EC2',
                 MetricName='CPUUtilization',
                 Dimensions=[{'Name': 'InstanceId', 'Value': instance_id}],
                 StartTime=start_time,
                 EndTime=end_time,
-                Period=3600,        # 1 ghante ka ek data point
+                Period=3600,
                 Statistics=['Average']
             )
-
             if response['Datapoints']:
-                # Latest datapoint lo
-                datapoints = sorted(
-                    response['Datapoints'],
-                    key=lambda x: x['Timestamp'],
-                    reverse=True
-                )
+                datapoints = sorted(response['Datapoints'], key=lambda x: x['Timestamp'], reverse=True)
                 return round(datapoints[0]['Average'], 2)
-
             return 0.0
-
-        except ClientError as e:
-            print(f"❌ CloudWatch error: {e.response['Error']['Code']}")
-            return None
         except Exception as e:
             print(f"❌ Error fetching CPU: {e}")
             return None
 
     def get_today_cost(self):
-        """
-        Cost Explorer se aaj ka total AWS spending nikalo.
-        Amount dollars mein return karta hai.
-        """
+        """Aaj ka AWS spending"""
         try:
             today = datetime.now().strftime('%Y-%m-%d')
             tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
-
             response = self.cost_explorer.get_cost_and_usage(
                 TimePeriod={'Start': today, 'End': tomorrow},
                 Granularity='DAILY',
                 Metrics=['UnblendedCost']
             )
-
             if response['ResultsByTime']:
                 amount = response['ResultsByTime'][0]['Total']['UnblendedCost']['Amount']
                 return round(float(amount), 2)
-
             return 0.0
-
         except ClientError as e:
             error_code = e.response['Error']['Code']
             if error_code == 'AccessDeniedException':
-                print("❌ Cost Explorer access nahi hai! IAM mein enable karo.")
+                print("❌ Cost Explorer access nahi hai!")
             else:
                 print(f"❌ Cost Explorer error: {error_code}")
             return None
@@ -191,26 +126,19 @@ class AWSMonitor:
             return None
 
     def get_month_cost(self):
-        """
-        Is mahine ka total cost nikalo.
-        Mahine ke pehle din se aaj tak.
-        """
+        """Is mahine ka total cost"""
         try:
             first_day = datetime.now().replace(day=1).strftime('%Y-%m-%d')
             tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
-
             response = self.cost_explorer.get_cost_and_usage(
                 TimePeriod={'Start': first_day, 'End': tomorrow},
                 Granularity='MONTHLY',
                 Metrics=['UnblendedCost']
             )
-
             if response['ResultsByTime']:
                 amount = response['ResultsByTime'][0]['Total']['UnblendedCost']['Amount']
                 return round(float(amount), 2)
-
             return 0.0
-
         except ClientError as e:
             print(f"❌ Cost Explorer error: {e.response['Error']['Code']}")
             return None
@@ -218,149 +146,131 @@ class AWSMonitor:
             print(f"❌ Error fetching month cost: {e}")
             return None
 
-
-    def get_rds_instances(self):
-        """
-        RDS database instances ki list nikalo.
-        Har instance ka: naam, engine, status, storage.
-        """
-        try:
-            response = self.rds.describe_db_instances()
-            instances = []
-
-            for db in response['DBInstances']:
-                instances.append({
-                    'id': db['DBInstanceIdentifier'],
-                    'engine': f"{db['Engine']} {db['EngineVersion']}",
-                    'status': db['DBInstanceStatus'],
-                    'instance_class': db['DBInstanceClass'],
-                    'storage': db['AllocatedStorage'],
-                    'multi_az': db['MultiAZ']
-                })
-
-            return instances
-
-        except ClientError as e:
-            error_code = e.response['Error']['Code']
-            if error_code == 'AccessDenied':
-                print("❌ RDS permission missing! Add AmazonRDSReadOnlyAccess")
-            else:
-                print(f"❌ RDS error: {error_code}")
-            return []
-        except Exception as e:
-            print(f"❌ Error fetching RDS instances: {e}")
-            return []
-
-    def get_rds_instances(self):
-        """
-        RDS database instances ki list nikalo.
-        Har instance ka: naam, engine, status, storage.
-        """
-        try:
-            response = self.rds.describe_db_instances()
-            instances = []
-
-            for db in response['DBInstances']:
-                instances.append({
-                    'id': db['DBInstanceIdentifier'],
-                    'engine': f"{db['Engine']} {db['EngineVersion']}",
-                    'status': db['DBInstanceStatus'],
-                    'instance_class': db['DBInstanceClass'],
-                    'storage': db['AllocatedStorage'],
-                    'multi_az': db['MultiAZ']
-                })
-
-            return instances
-
-        except ClientError as e:
-            error_code = e.response['Error']['Code']
-            if error_code == 'AccessDenied':
-                print("❌ RDS permission missing!")
-            else:
-                print(f"❌ RDS error: {error_code}")
-            return []
-        except Exception as e:
-            print(f"❌ Error fetching RDS instances: {e}")
-            return []
-
     def get_yesterday_cost(self):
-        """Kal ka cost nikalo anomaly detection ke liye"""
+        """Kal ka cost - anomaly detection ke liye"""
         try:
             yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
             today = datetime.now().strftime('%Y-%m-%d')
-
             response = self.cost_explorer.get_cost_and_usage(
                 TimePeriod={'Start': yesterday, 'End': today},
                 Granularity='DAILY',
                 Metrics=['UnblendedCost']
             )
-
             if response['ResultsByTime']:
                 amount = response['ResultsByTime'][0]['Total']['UnblendedCost']['Amount']
                 return round(float(amount), 2)
-
             return 0.0
-
-        except ClientError as e:
-            print(f"❌ Yesterday cost error: {e.response['Error']['Code']}")
-            return None
         except Exception as e:
             print(f"❌ Error fetching yesterday cost: {e}")
             return None
 
     def get_weekly_costs(self):
-        """
-        Is hafte aur pichle hafte ka cost nikalo comparison ke liye.
-        Returns: (this_week_cost, last_week_cost)
-        """
+        """Is hafte aur pichle hafte ka cost"""
         try:
             today = datetime.now()
-
-            # Is hafte - last 7 days
             this_week_start = (today - timedelta(days=7)).strftime('%Y-%m-%d')
             this_week_end = (today + timedelta(days=1)).strftime('%Y-%m-%d')
-
-            # Pichla hafte - 8 to 14 days ago
             last_week_start = (today - timedelta(days=14)).strftime('%Y-%m-%d')
             last_week_end = (today - timedelta(days=7)).strftime('%Y-%m-%d')
 
-            # Is hafte ka cost
             r1 = self.cost_explorer.get_cost_and_usage(
                 TimePeriod={'Start': this_week_start, 'End': this_week_end},
-                Granularity='DAILY',
-                Metrics=['UnblendedCost']
+                Granularity='DAILY', Metrics=['UnblendedCost']
             )
-
-            # Pichle hafte ka cost
             r2 = self.cost_explorer.get_cost_and_usage(
                 TimePeriod={'Start': last_week_start, 'End': last_week_end},
-                Granularity='DAILY',
-                Metrics=['UnblendedCost']
+                Granularity='DAILY', Metrics=['UnblendedCost']
             )
 
-            # Saare daily costs add karo
-            this_week = sum(
-                float(day['Total']['UnblendedCost']['Amount'])
-                for day in r1['ResultsByTime']
-            )
-            last_week = sum(
-                float(day['Total']['UnblendedCost']['Amount'])
-                for day in r2['ResultsByTime']
-            )
+            this_week = sum(float(day['Total']['UnblendedCost']['Amount']) for day in r1['ResultsByTime'])
+            last_week = sum(float(day['Total']['UnblendedCost']['Amount']) for day in r2['ResultsByTime'])
 
             return round(this_week, 2), round(last_week, 2)
-
-        except ClientError as e:
-            print(f"❌ Weekly cost error: {e.response['Error']['Code']}")
-            return None, None
         except Exception as e:
             print(f"❌ Error fetching weekly costs: {e}")
             return None, None
 
+    def get_rds_instances(self):
+        """RDS database instances ki list"""
+        try:
+            response = self.rds.describe_db_instances()
+            instances = []
+            for db in response['DBInstances']:
+                instances.append({
+                    'id': db['DBInstanceIdentifier'],
+                    'engine': f"{db['Engine']} {db['EngineVersion']}",
+                    'status': db['DBInstanceStatus'],
+                    'instance_class': db['DBInstanceClass'],
+                    'storage': db['AllocatedStorage'],
+                    'multi_az': db['MultiAZ']
+                })
+            return instances
+        except ClientError as e:
+            print(f"❌ RDS error: {e.response['Error']['Code']}")
+            return []
+        except Exception as e:
+            print(f"❌ Error fetching RDS instances: {e}")
+            return []
 
-# Test - AWS credentials chahiye honge
+    def get_s3_buckets(self):
+        """S3 buckets ki list with size aur file count"""
+        try:
+            response = self.s3.list_buckets()
+            buckets = []
+
+            for bucket in response['Buckets']:
+                bucket_name = bucket['Name']
+                size_bytes = 0
+                object_count = 0
+
+                try:
+                    end_time = datetime.utcnow()
+                    start_time = end_time - timedelta(days=2)
+
+                    size_response = self.cloudwatch.get_metric_statistics(
+                        Namespace='AWS/S3',
+                        MetricName='BucketSizeBytes',
+                        Dimensions=[
+                            {'Name': 'BucketName', 'Value': bucket_name},
+                            {'Name': 'StorageType', 'Value': 'StandardStorage'}
+                        ],
+                        StartTime=start_time, EndTime=end_time,
+                        Period=86400, Statistics=['Average']
+                    )
+                    if size_response['Datapoints']:
+                        size_bytes = size_response['Datapoints'][-1]['Average']
+
+                    count_response = self.cloudwatch.get_metric_statistics(
+                        Namespace='AWS/S3',
+                        MetricName='NumberOfObjects',
+                        Dimensions=[
+                            {'Name': 'BucketName', 'Value': bucket_name},
+                            {'Name': 'StorageType', 'Value': 'AllStorageTypes'}
+                        ],
+                        StartTime=start_time, EndTime=end_time,
+                        Period=86400, Statistics=['Average']
+                    )
+                    if count_response['Datapoints']:
+                        object_count = int(count_response['Datapoints'][-1]['Average'])
+                except Exception:
+                    pass
+
+                size_gb = round(size_bytes / (1024 ** 3), 2)
+                buckets.append({
+                    'name': bucket_name,
+                    'size_gb': size_gb,
+                    'object_count': object_count,
+                    'created': bucket['CreationDate'].strftime('%d-%m-%Y')
+                })
+
+            return buckets
+        except ClientError as e:
+            print(f"❌ S3 error: {e.response['Error']['Code']}")
+            return []
+        except Exception as e:
+            print(f"❌ Error fetching S3 buckets: {e}")
+            return []
+
+
 if __name__ == '__main__':
-    print("AWS Monitor Test\n")
-    print("Note: Real AWS credentials chahiye test ke liye")
-    print("Ye file bot.py se use hogi automatically")
-    print("\n✅ aws_monitor.py ready!")
+    print("AWS Monitor ready!")

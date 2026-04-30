@@ -25,18 +25,19 @@ def main_menu_keyboard():
             InlineKeyboardButton("RDS Status", callback_data="show_rds")
         ],
         [
-            InlineKeyboardButton("Costs", callback_data="show_costs"),
-            InlineKeyboardButton("Set Alert", callback_data="alert_menu")
+            InlineKeyboardButton("S3 Storage", callback_data="show_s3"),
+            InlineKeyboardButton("Costs", callback_data="show_costs")
         ],
         [
-            InlineKeyboardButton("My Alerts", callback_data="list_alerts"),
-            InlineKeyboardButton("My Accounts", callback_data="list_accounts")
+            InlineKeyboardButton("Set Alert", callback_data="alert_menu"),
+            InlineKeyboardButton("My Alerts", callback_data="list_alerts")
         ],
         [
-            InlineKeyboardButton("Add Account", callback_data="add_account_info"),
-            InlineKeyboardButton("Upgrade", callback_data="show_upgrade")
+            InlineKeyboardButton("My Accounts", callback_data="list_accounts"),
+            InlineKeyboardButton("Add Account", callback_data="add_account_info")
         ],
         [
+            InlineKeyboardButton("Upgrade", callback_data="show_upgrade"),
             InlineKeyboardButton("Help", callback_data="show_help")
         ]
     ])
@@ -211,6 +212,51 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Select account for costs:",
             reply_markup=account_select_keyboard(accounts, "costs")
         )
+
+    elif data == "show_s3":
+        await query.edit_message_text("Fetching S3 data...")
+
+        accounts = db.get_aws_accounts(user_id)
+        if not accounts:
+            await query.edit_message_text("No AWS account connected!", reply_markup=back_to_menu_keyboard())
+            return
+
+        account = accounts[0]
+        creds = db.get_aws_credentials(account['account_id'])
+
+        try:
+            monitor = AWSMonitor(creds['access_key'], creds['secret_key'], creds['region'])
+            buckets = monitor.get_s3_buckets()
+
+            from datetime import datetime
+            message = f"S3 Storage - {account['account_name']}\n\n"
+
+            if buckets:
+                message += f"{len(buckets)} Bucket(s) Found:\n\n"
+                for bucket in buckets[:10]:
+                    message += f"- {bucket['name']}\n"
+                    message += f"  Size: {bucket['size_gb']} GB\n"
+                    message += f"  Files: {bucket['object_count']:,}\n"
+                    message += f"  Created: {bucket['created']}\n\n"
+                if len(buckets) > 10:
+                    message += f"...and {len(buckets) - 10} more buckets\n"
+            else:
+                message += "No S3 buckets found\n"
+
+            message += f"\nUpdated: {datetime.now().strftime('%H:%M:%S')}"
+
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("Refresh", callback_data="show_s3"),
+                    InlineKeyboardButton("EC2 Status", callback_data="show_status")
+                ],
+                [InlineKeyboardButton("Back to Menu", callback_data="main_menu")]
+            ])
+
+            await query.edit_message_text(message, reply_markup=keyboard)
+
+        except Exception as e:
+            await query.edit_message_text(f"Error: {str(e)}", reply_markup=back_to_menu_keyboard())
 
     elif data == "show_rds":
         await query.edit_message_text("Fetching RDS data...")
