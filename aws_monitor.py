@@ -36,6 +36,22 @@ class AWSMonitor:
                 region_name='us-east-1'
             )
 
+            # RDS client (databases ke liye)
+            self.rds = boto3.client(
+                'rds',
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_key,
+                region_name=region
+            )
+
+            # RDS client (databases ke liye)
+            self.rds = boto3.client(
+                'rds',
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_key,
+                region_name=region
+            )
+
             self.region = region
             print(f"✅ AWSMonitor ready! Region: {region}")
 
@@ -202,6 +218,70 @@ class AWSMonitor:
             print(f"❌ Error fetching month cost: {e}")
             return None
 
+
+    def get_rds_instances(self):
+        """
+        RDS database instances ki list nikalo.
+        Har instance ka: naam, engine, status, storage.
+        """
+        try:
+            response = self.rds.describe_db_instances()
+            instances = []
+
+            for db in response['DBInstances']:
+                instances.append({
+                    'id': db['DBInstanceIdentifier'],
+                    'engine': f"{db['Engine']} {db['EngineVersion']}",
+                    'status': db['DBInstanceStatus'],
+                    'instance_class': db['DBInstanceClass'],
+                    'storage': db['AllocatedStorage'],
+                    'multi_az': db['MultiAZ']
+                })
+
+            return instances
+
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            if error_code == 'AccessDenied':
+                print("❌ RDS permission missing! Add AmazonRDSReadOnlyAccess")
+            else:
+                print(f"❌ RDS error: {error_code}")
+            return []
+        except Exception as e:
+            print(f"❌ Error fetching RDS instances: {e}")
+            return []
+
+    def get_rds_instances(self):
+        """
+        RDS database instances ki list nikalo.
+        Har instance ka: naam, engine, status, storage.
+        """
+        try:
+            response = self.rds.describe_db_instances()
+            instances = []
+
+            for db in response['DBInstances']:
+                instances.append({
+                    'id': db['DBInstanceIdentifier'],
+                    'engine': f"{db['Engine']} {db['EngineVersion']}",
+                    'status': db['DBInstanceStatus'],
+                    'instance_class': db['DBInstanceClass'],
+                    'storage': db['AllocatedStorage'],
+                    'multi_az': db['MultiAZ']
+                })
+
+            return instances
+
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            if error_code == 'AccessDenied':
+                print("❌ RDS permission missing!")
+            else:
+                print(f"❌ RDS error: {error_code}")
+            return []
+        except Exception as e:
+            print(f"❌ Error fetching RDS instances: {e}")
+            return []
 
     def get_yesterday_cost(self):
         """Kal ka cost nikalo anomaly detection ke liye"""
