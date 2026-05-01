@@ -56,16 +56,81 @@ class AlertScheduler:
             name='Cost Anomaly Check'
         )
 
+        # Job 5: Har raat 8 baje renewal reminder check karo
+        self.scheduler.add_job(
+            self.check_renewal_reminders,
+            CronTrigger(hour=20, minute=0),
+            id='renewal_reminder',
+            name='Renewal Reminder'
+        )
+
         self.scheduler.start()
         print("✅ Scheduler started!")
         print("   - Har 1 minute mein alerts check hoga")
         print("   - Har subah 9 baje daily summary jayegi")
         print("   - Har Monday 9 baje weekly report jayegi")
         print("   - Har 6 ghante mein cost anomaly check hoga")
+        print("   - Har raat 8 baje renewal reminder check hoga")
 
     def stop(self):
         self.scheduler.shutdown()
         print("✅ Scheduler stopped.")
+
+    # ─────────────────────────────────────────
+    # RENEWAL REMINDER
+    # ─────────────────────────────────────────
+
+    async def check_renewal_reminders(self):
+        """Premium expire hone wale users ko remind karo"""
+        print(f"🔔 Renewal reminders check... {datetime.now().strftime('%H:%M:%S')}")
+
+        conn = self.db._get_conn()
+        cursor = conn.cursor()
+        try:
+            # Users jinki premium 3 din mein expire hogi
+            cursor.execute("""
+                SELECT s.user_id, u.first_name, s.end_date
+                FROM subscriptions s
+                JOIN users u ON s.user_id = u.user_id
+                WHERE s.is_active = true
+                AND s.plan_name = 'premium'
+                AND s.end_date BETWEEN NOW() AND NOW() + INTERVAL '3 days'
+            """)
+            expiring = cursor.fetchall()
+        finally:
+            cursor.close()
+            self.db._put_conn(conn)
+
+        for user in expiring:
+            try:
+                await self.send_renewal_reminder(user[0], user[1], user[2])
+            except Exception as e:
+                print(f"❌ Renewal reminder failed for {user[0]}: {e}")
+
+    async def send_renewal_reminder(self, user_id, first_name, end_date):
+        """User ko renewal reminder bhejo"""
+        days_left = (end_date - datetime.now()).days + 1
+
+        message = f"Your Premium subscription expires in {days_left} day(s)!\n\n"
+        message += f"Expiry: {end_date.strftime('%d-%m-%Y')}\n\n"
+        message += f"Renew now to keep enjoying:\n"
+        message += f"- 30 min alert checks\n"
+        message += f"- Weekly cost reports\n"
+        message += f"- Cost anomaly detection\n"
+        message += f"- PDF monthly reports\n\n"
+        message += f"Tap Upgrade in the main menu to renew."
+
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Renew Premium - Rs.499", callback_data="buy_premium")]
+        ])
+
+        await self.bot.send_message(
+            chat_id=user_id,
+            text=message,
+            reply_markup=keyboard
+        )
+        print(f"✅ Renewal reminder sent to {first_name} ({user_id})")
 
     # ─────────────────────────────────────────
     # COST ANOMALY DETECTION
