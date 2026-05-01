@@ -345,6 +345,8 @@ class AlertScheduler:
         if self.is_threshold_crossed(current_value, alert['threshold_value'], alert['comparison_operator']):
             print(f"   🚨 Alert triggered! Notifying user {alert['user_id']}")
             await self.send_alert(alert, current_value)
+            # History save karo
+            self.db.save_alert_history(alert['config_id'], current_value)
 
     def get_metric_value(self, monitor, metric_name):
         """Metric ka current value fetch karo"""

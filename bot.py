@@ -463,13 +463,32 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "list_alerts":
         alerts = db.get_user_alerts(user_id)
         if not alerts:
-            message = "No alerts set!\n\nUse /setalert to create one."
+            message = "No alerts set!\n\nUse Set Alert button to create one."
         else:
             message = "Your Active Alerts:\n\n"
             for alert in alerts:
                 message += f"- {alert['metric_name']} {alert['comparison_operator']} {alert['threshold_value']}\n"
                 message += f"  Check every {alert['check_interval']} min | ID: {alert['config_id']}\n\n"
             message += "To delete: /deletealert <id>"
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("View Alert History", callback_data="alert_history")],
+            [InlineKeyboardButton("Back to Menu", callback_data="main_menu")]
+        ])
+        await query.edit_message_text(message, reply_markup=keyboard)
+
+    elif data == "alert_history":
+        history = db.get_alert_history(user_id)
+        if not history:
+            message = "No alert history yet.\n\nAlerts will appear here when they trigger."
+        else:
+            message = "Alert History (Last 10):\n\n"
+            for h in history:
+                unit = "$" if "cost" in h['metric_name'] else "%"
+                message += f"{h['metric_name']} {h['operator']} {unit}{h['threshold']}\n"
+                message += f"  Triggered: {h['triggered_at'].strftime('%d-%m-%Y %H:%M')}\n"
+                message += f"  Value: {unit}{h['triggered_value']}\n\n"
+
         await query.edit_message_text(message, reply_markup=back_to_menu_keyboard())
 
     elif data == "add_account_info":

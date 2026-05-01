@@ -430,6 +430,60 @@ class Database:
             self._put_conn(conn)
 
     # ─────────────────────────────────────────
+    # ALERT HISTORY
+    # ─────────────────────────────────────────
+
+    def save_alert_history(self, config_id, triggered_value):
+        """Alert trigger hua to history mein save karo"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO alert_history (config_id, triggered_value)
+                VALUES (%s, %s)
+            """, (config_id, triggered_value))
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"❌ Error saving alert history: {e}")
+        finally:
+            cursor.close()
+            self._put_conn(conn)
+
+    def get_alert_history(self, user_id, limit=10):
+        """User ki alert history nikalo"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT ah.history_id, ac.metric_name, ac.comparison_operator,
+                       ac.threshold_value, ah.triggered_value, ah.triggered_at
+                FROM alert_history ah
+                JOIN alert_configs ac ON ah.config_id = ac.config_id
+                JOIN aws_accounts aa ON ac.account_id = aa.account_id
+                WHERE aa.user_id = %s
+                ORDER BY ah.triggered_at DESC
+                LIMIT %s
+            """, (user_id, limit))
+            rows = cursor.fetchall()
+            history = []
+            for row in rows:
+                history.append({
+                    'metric_name': row[1],
+                    'operator': row[2],
+                    'threshold': row[3],
+                    'triggered_value': row[4],
+                    'triggered_at': row[5]
+                })
+            return history
+        except Exception as e:
+            print(f"❌ Error fetching alert history: {e}")
+            return []
+        finally:
+            cursor.close()
+            self._put_conn(conn)
+
+    # ─────────────────────────────────────────
     # ADMIN OPERATIONS
     # ─────────────────────────────────────────
 
