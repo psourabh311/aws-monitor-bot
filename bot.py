@@ -7,11 +7,13 @@ from database import Database
 from aws_monitor import AWSMonitor
 from scheduler import AlertScheduler
 from subscription import SubscriptionManager, PLANS
+from report import ReportGenerator
 
 load_dotenv()
 
 db = Database()
 sub_manager = SubscriptionManager()
+report_gen = ReportGenerator()
 
 
 # ─────────────────────────────────────────
@@ -39,6 +41,9 @@ def main_menu_keyboard():
         [
             InlineKeyboardButton("Upgrade", callback_data="show_upgrade"),
             InlineKeyboardButton("Help", callback_data="show_help")
+        ],
+        [
+            InlineKeyboardButton("Download PDF Report", callback_data="download_report")
         ]
     ])
 
@@ -438,6 +443,71 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Payment not verified!\n\nComplete payment first then try again.",
                 reply_markup=back_to_menu_keyboard()
             )
+
+    elif data == "download_report":
+        await query.edit_message_text("Generating PDF report... Please wait.")
+
+        accounts = db.get_aws_accounts(user_id)
+        if not accounts:
+            await query.edit_message_text("No AWS account connected!", reply_markup=back_to_menu_keyboard())
+            return
+
+        account = accounts[0]
+        creds = db.get_aws_credentials(account['account_id'])
+
+        try:
+            monitor = AWSMonitor(creds['access_key'], creds['secret_key'], creds['region'])
+
+            # Saara data fetch karo
+            instances = monitor.get_ec2_instances()
+            instances_with_cpu = []
+            for inst in instances:
+                cpu = monitor.get_cpu_utilization(inst['id'])
+                inst['cpu'] = cpu or 0
+                instances_with_cpu.append(inst)
+
+            today_cost = monitor.get_today_cost()
+            month_cost = monitor.get_month_cost()
+            this_week, last_week = monitor.get_weekly_costs()
+            rds_instances = monitor.get_rds_instances()
+            s3_buckets = monitor.get_s3_buckets()
+
+            # User data
+            user = db.get_user(user_id)
+            user_data = {'first_name': user['first_name'] if user else 'User'}
+
+            # AWS data
+            aws_data = {
+                'account_name': account['account_name'],
+                'region': creds['region'],
+                'today_cost': today_cost,
+                'month_cost': month_cost,
+                'this_week_cost': this_week,
+                'last_week_cost': last_week,
+                'instances': instances_with_cpu,
+                'rds_instances': rds_instances,
+                's3_buckets': s3_buckets
+            }
+
+            # PDF generate karo
+            pdf_buffer = report_gen.generate_monthly_report(user_data, aws_data)
+
+            from telegram import InputFile
+            from datetime import datetime
+            filename = f"aws_report_{datetime.now().strftime('%B_%Y')}.pdf"
+
+            await query.message.reply_document(
+                document=InputFile(pdf_buffer, filename=filename),
+                caption=f"Your AWS Monthly Report - {datetime.now().strftime('%B %Y')}"
+            )
+
+            await query.edit_message_text(
+                "PDF report sent!",
+                reply_markup=main_menu_keyboard()
+            )
+
+        except Exception as e:
+            await query.edit_message_text(f"Error generating report: {str(e)}", reply_markup=back_to_menu_keyboard())
 
     elif data == "show_help":
         message = "AWS Monitor Bot - Help\n\n"
