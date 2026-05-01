@@ -2,7 +2,8 @@ import os
 import asyncio
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import (Application, CommandHandler, CallbackQueryHandler,
+                           ContextTypes, ConversationHandler, MessageHandler, filters)
 from database import Database
 from aws_monitor import AWSMonitor
 from scheduler import AlertScheduler
@@ -15,6 +16,8 @@ db = Database()
 sub_manager = SubscriptionManager()
 report_gen = ReportGenerator()
 
+# Conversation states
+ALERT_METRIC, ALERT_OPERATOR, ALERT_VALUE, ALERT_INTERVAL = range(4)
 
 # ─────────────────────────────────────────
 # KEYBOARDS
@@ -331,25 +334,114 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(f"Error: {str(e)}", reply_markup=back_to_menu_keyboard())
 
     elif data == "alert_menu":
+        accounts = db.get_aws_accounts(user_id)
+        if not accounts:
+            await query.edit_message_text(
+                "No AWS account connected.\n\nClick /addaccount to link your AWS account and start monitoring.",
+                reply_markup=back_to_menu_keyboard()
+            )
+            return
+
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("New Alert", callback_data="new_alert_info"),
-                InlineKeyboardButton("View Alerts", callback_data="list_alerts")
+                InlineKeyboardButton("Create New Alert", callback_data="create_alert_step1"),
+                InlineKeyboardButton("View My Alerts", callback_data="list_alerts")
             ],
             [InlineKeyboardButton("Back to Menu", callback_data="main_menu")]
         ])
         await query.edit_message_text("Alert Management\n\nWhat would you like to do?", reply_markup=keyboard)
 
+    elif data == "create_alert_step1":
+        # Step 1: Metric choose karo
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Daily Cost", callback_data="alert_metric_daily_cost")],
+            [InlineKeyboardButton("Monthly Cost", callback_data="alert_metric_monthly_cost")],
+            [InlineKeyboardButton("CPU Average", callback_data="alert_metric_cpu_average")],
+            [InlineKeyboardButton("Cancel", callback_data="alert_menu")]
+        ])
+        await query.edit_message_text(
+            "Create New Alert\n\nStep 1 of 4: What do you want to monitor?",
+            reply_markup=keyboard
+        )
+
+    elif data.startswith("alert_metric_"):
+        # Step 2: Operator choose karo
+        metric = data.replace("alert_metric_", "")
+        context.user_data['alert_metric'] = metric
+
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Greater than (>)", callback_data="alert_op_>"),
+                InlineKeyboardButton("Less than (<)", callback_data="alert_op_<")
+            ],
+            [
+                InlineKeyboardButton("Greater or equal (>=)", callback_data="alert_op_>="),
+                InlineKeyboardButton("Less or equal (<=)", callback_data="alert_op_<=")
+            ],
+            [InlineKeyboardButton("Cancel", callback_data="alert_menu")]
+        ])
+        await query.edit_message_text(
+            f"Create New Alert\n\nMetric: {metric}\n\nStep 2 of 4: Choose condition:",
+            reply_markup=keyboard
+        )
+
+    elif data.startswith("alert_op_"):
+        # Step 3: Value type karo
+        operator = data.replace("alert_op_", "")
+        context.user_data['alert_operator'] = operator
+        metric = context.user_data.get('alert_metric', '')
+        context.user_data['waiting_for'] = 'alert_value'
+
+        unit = "$" if "cost" in metric else "%"
+        await query.edit_message_text(
+            f"Create New Alert\n\n"
+            f"Metric: {metric}\n"
+            f"Condition: {operator}\n\n"
+            f"Step 3 of 4: Enter threshold value\n"
+            f"Example: 10 (means {unit}10)\n\n"
+            f"Type the value and send:"
+        )
+
+    elif data.startswith("alert_interval_"):
+        # Step 4 complete - save alert
+        interval = int(data.replace("alert_interval_", ""))
+        metric = context.user_data.get('alert_metric')
+        operator = context.user_data.get('alert_operator')
+        value = context.user_data.get('alert_value')
+
+        # Plan check karo - free user sirf 360+ min use kar sakta hai
+        current_plan = db.get_user_plan(user_id)
+        if current_plan == 'free' and interval < 360:
+            await query.edit_message_text(
+                "This check interval requires Premium.\n\n"
+                "Free plan allows checks every 6 hours or more.\n\n"
+                "Upgrade to Premium for 30-minute checks.\n\n"
+                "Click Upgrade in the main menu.",
+                reply_markup=main_menu_keyboard()
+            )
+            context.user_data.clear()
+            return
+
+        accounts = db.get_aws_accounts(user_id)
+        account_id = accounts[0]['account_id']
+        config_id = db.add_alert(account_id, metric, float(value), operator, interval)
+        context.user_data.clear()
+
+        if config_id:
+            unit = "$" if "cost" in metric else "%"
+            await query.edit_message_text(
+                f"Alert Created Successfully!\n\n"
+                f"Metric: {metric}\n"
+                f"Condition: {operator} {unit}{value}\n"
+                f"Check every: {interval} minutes\n\n"
+                f"You will be notified when this condition is met.",
+                reply_markup=main_menu_keyboard()
+            )
+        else:
+            await query.edit_message_text("Failed to save alert!", reply_markup=main_menu_keyboard())
+
     elif data == "new_alert_info":
-        message = "Create New Alert\n\n"
-        message += "Use command:\n"
-        message += "/setalert <metric> <operator> <value> <interval>\n\n"
-        message += "Metrics: daily_cost, monthly_cost, cpu_average\n"
-        message += "Operators: > < >= <=\n\n"
-        message += "Examples:\n"
-        message += "/setalert daily_cost > 10 60\n"
-        message += "/setalert cpu_average > 80 30"
-        await query.edit_message_text(message, reply_markup=back_to_menu_keyboard())
+        pass  # handled above now
 
     elif data == "list_alerts":
         alerts = db.get_user_alerts(user_id)
@@ -588,6 +680,68 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # COMMANDS
 # ─────────────────────────────────────────
 
+async def handle_alert_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Step 3: User ne value type ki - Step 4 dikhao"""
+    if context.user_data.get('waiting_for') != 'alert_value':
+        return
+
+    text = update.message.text.strip()
+
+    try:
+        value = float(text)
+    except ValueError:
+        await update.message.reply_text(
+            "Please enter a valid number.\nExample: 10 or 5.5"
+        )
+        return
+
+    context.user_data['alert_value'] = text
+    context.user_data['waiting_for'] = None
+
+    metric = context.user_data.get('alert_metric', '')
+    operator = context.user_data.get('alert_operator', '')
+    unit = "$" if "cost" in metric else "%"
+
+    # Plan check karo
+    current_plan = db.get_user_plan(update.effective_user.id)
+    is_premium = current_plan == 'premium'
+
+    if is_premium:
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Every 30 min", callback_data="alert_interval_30"),
+                InlineKeyboardButton("Every 1 hour", callback_data="alert_interval_60")
+            ],
+            [
+                InlineKeyboardButton("Every 6 hours", callback_data="alert_interval_360"),
+                InlineKeyboardButton("Every 12 hours", callback_data="alert_interval_720")
+            ],
+            [InlineKeyboardButton("Cancel", callback_data="alert_menu")]
+        ])
+        step4_msg = f"Step 4 of 4: How often should I check?"
+    else:
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Every 30 min (Premium)", callback_data="alert_interval_30"),
+                InlineKeyboardButton("Every 1 hour (Premium)", callback_data="alert_interval_60")
+            ],
+            [
+                InlineKeyboardButton("Every 6 hours", callback_data="alert_interval_360"),
+                InlineKeyboardButton("Every 12 hours", callback_data="alert_interval_720")
+            ],
+            [InlineKeyboardButton("Cancel", callback_data="alert_menu")]
+        ])
+        step4_msg = f"Step 4 of 4: How often should I check?\n(30 min & 1 hour require Premium)"
+
+    await update.message.reply_text(
+        f"Create New Alert\n\n"
+        f"Metric: {metric}\n"
+        f"Condition: {operator} {unit}{text}\n\n"
+        f"{step4_msg}",
+        reply_markup=keyboard
+    )
+
+
 async def add_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) == 4:
         account_name = context.args[0]
@@ -750,6 +904,7 @@ def main():
     app.add_handler(CommandHandler("setalert", set_alert))
     app.add_handler(CommandHandler("deletealert", delete_alert))
     app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_alert_value))
     app.add_error_handler(error_handler)
 
     async def post_init(application):
