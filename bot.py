@@ -44,6 +44,9 @@ def main_menu_keyboard():
         ],
         [
             InlineKeyboardButton("Download PDF Report", callback_data="download_report")
+        ],
+        [
+            InlineKeyboardButton("Refer a Friend", callback_data="show_referral")
         ]
     ])
 
@@ -156,6 +159,18 @@ async def get_costs_message(user_id, account_id=None):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     db.add_user(user.id, user.username, user.first_name)
+
+    # Referral code check karo
+    if context.args:
+        referral_code = context.args[0]
+        referrer_id = db.get_user_by_referral_code(referral_code)
+        if referrer_id and referrer_id != user.id:
+            success = db.add_referral(referrer_id, user.id)
+            if success:
+                await update.message.reply_text(
+                    f"Welcome! You joined via referral!\n"
+                    f"Both you and your friend get 7 days FREE Premium!"
+                )
 
     message = f"Hello {user.first_name}!\n\n"
     message += "I am AWS Monitor Bot\n"
@@ -508,6 +523,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         except Exception as e:
             await query.edit_message_text(f"Error generating report: {str(e)}", reply_markup=back_to_menu_keyboard())
+
+    elif data == "show_referral":
+        code = db.get_or_create_referral_code(user_id)
+        count = db.get_referral_count(user_id)
+        bot_username = os.getenv('BOT_USERNAME', 'aws_monitor_telegram_bot')
+
+        message = f"Refer a Friend - Get Free Premium!\n\n"
+        message += f"Your referral code: {code}\n\n"
+        message += f"Share this link:\n"
+        message += f"t.me/{bot_username}?start={code}\n\n"
+        message += f"Your referrals: {count} friends joined\n"
+        message += f"Rewards earned: {count * 7} days free premium\n\n"
+        message += f"How it works:\n"
+        message += f"1. Share your link with friends\n"
+        message += f"2. Friend joins using your link\n"
+        message += f"3. Both get 7 days FREE Premium!\n\n"
+        message += f"No limit - more referrals = more free premium!"
+
+        await query.edit_message_text(message, reply_markup=back_to_menu_keyboard())
 
     elif data == "show_help":
         message = "AWS Monitor Bot - Help\n\n"

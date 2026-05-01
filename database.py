@@ -313,6 +313,122 @@ class Database:
             cursor.close()
             self._put_conn(conn)
 
+    # ─────────────────────────────────────────
+    # REFERRAL OPERATIONS
+    # ─────────────────────────────────────────
+
+    def get_or_create_referral_code(self, user_id):
+        """User ka referral code nikalo ya banao"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            # Check karo code already hai
+            cursor.execute(
+                "SELECT referral_code FROM users WHERE user_id = %s",
+                (user_id,)
+            )
+            row = cursor.fetchone()
+            if row and row[0]:
+                return row[0]
+
+            # Naya code banao
+            import random
+            import string
+            user = self.get_user(user_id)
+            name_part = (user['first_name'][:6].upper() if user else 'USER')
+            random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+            code = f"{name_part}_{random_part}"
+
+            cursor.execute(
+                "UPDATE users SET referral_code = %s WHERE user_id = %s",
+                (code, user_id)
+            )
+            conn.commit()
+            return code
+        except Exception as e:
+            conn.rollback()
+            print(f"❌ Error with referral code: {e}")
+            return None
+        finally:
+            cursor.close()
+            self._put_conn(conn)
+
+    def get_user_by_referral_code(self, code):
+        """Referral code se user nikalo"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT user_id FROM users WHERE referral_code = %s",
+                (code,)
+            )
+            row = cursor.fetchone()
+            return row[0] if row else None
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            return None
+        finally:
+            cursor.close()
+            self._put_conn(conn)
+
+    def add_referral(self, referrer_id, referred_id):
+        """Referral record add karo aur dono ko reward do"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            # Check karo already referred nahi hai
+            cursor.execute(
+                "SELECT referral_id FROM referrals WHERE referred_id = %s",
+                (referred_id,)
+            )
+            if cursor.fetchone():
+                return False  # Already referred
+
+            # Referral save karo
+            cursor.execute("""
+                INSERT INTO referrals (referrer_id, referred_id, reward_given)
+                VALUES (%s, %s, true)
+            """, (referrer_id, referred_id))
+
+            # Dono ko 7 days free premium do
+            from datetime import datetime, timedelta
+            end_date = datetime.now() + timedelta(days=7)
+
+            for uid in [referrer_id, referred_id]:
+                cursor.execute("""
+                    INSERT INTO subscriptions (user_id, plan_name, end_date)
+                    VALUES (%s, 'premium', %s)
+                    ON CONFLICT DO NOTHING
+                """, (uid, end_date))
+
+            conn.commit()
+            print(f"✅ Referral added! {referrer_id} referred {referred_id}")
+            return True
+        except Exception as e:
+            conn.rollback()
+            print(f"❌ Error adding referral: {e}")
+            return False
+        finally:
+            cursor.close()
+            self._put_conn(conn)
+
+    def get_referral_count(self, user_id):
+        """User ne kitne log refer kiye"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT COUNT(*) FROM referrals WHERE referrer_id = %s",
+                (user_id,)
+            )
+            return cursor.fetchone()[0]
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            return 0
+        finally:
+            cursor.close()
+            self._put_conn(conn)
+
     def close(self):
         """Sab connections band karo"""
         self.pool.closeall()
