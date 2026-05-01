@@ -441,14 +441,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("Back", callback_data="show_upgrade")]
             ])
             message = "Premium Subscription\n\n"
-            message += "Amount: Rs.499/month\n\n"
-            message += "1. Click Pay Now button\n"
-            message += "2. Complete payment\n"
-            message += "3. Come back and click Payment Done\n\n"
-            message += "Test mode - use fake card:\n"
-            message += "Card: 4111 1111 1111 1111\n"
-            message += "Expiry: Any future date\n"
-            message += "CVV: Any 3 digits"
+            message += "Plan: Premium\n"
+            message += "Amount: Rs.499/month\n"
+            message += "Duration: 30 days\n\n"
+            message += "How to proceed:\n"
+            message += "1. Click Pay Now\n"
+            message += "2. Complete payment via UPI, Card or Net Banking\n"
+            message += "3. Return here and click Payment Done\n\n"
+            message += "Your subscription will be activated instantly after payment verification."
             await query.edit_message_text(message, reply_markup=keyboard)
         else:
             await query.edit_message_text("Payment link failed! Try again.", reply_markup=back_to_menu_keyboard())
