@@ -161,6 +161,11 @@ async def get_costs_message(user_id, account_id=None):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+
+    # Check karo naya user hai ya returning
+    existing_user = db.get_user(user.id)
+    is_new = existing_user is None
+
     db.add_user(user.id, user.username, user.first_name)
 
     # Referral code check karo
@@ -175,12 +180,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"Both you and your friend get 7 days FREE Premium!"
                 )
 
-    message = f"Hello {user.first_name}!\n\n"
-    message += "I am AWS Monitor Bot\n"
-    message += "I monitor your AWS account and send alerts.\n\n"
-    message += "Choose an option below:"
+    if is_new:
+        # Naya user - onboarding flow
+        message = f"Welcome to AWS Monitor Bot, {user.first_name}!\n\n"
+        message += "I help you monitor your AWS infrastructure and control costs.\n\n"
+        message += "Let's get you set up in 2 simple steps:\n\n"
+        message += "Step 1: Connect your AWS account\n"
+        message += "Step 2: Set your first cost alert\n\n"
+        message += "Ready? Let's start!"
 
-    await update.message.reply_text(message, reply_markup=main_menu_keyboard())
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Get Started", callback_data="onboard_step1")],
+            [InlineKeyboardButton("Skip to Main Menu", callback_data="main_menu")]
+        ])
+        await update.message.reply_text(message, reply_markup=keyboard)
+    else:
+        # Returning user - seedha main menu
+        message = f"Welcome back, {user.first_name}!\n\nChoose an option below:"
+        await update.message.reply_text(message, reply_markup=main_menu_keyboard())
 
 
 # ─────────────────────────────────────────
@@ -199,6 +216,63 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Hello {query.from_user.first_name}!\n\nChoose an option:",
             reply_markup=main_menu_keyboard()
         )
+
+    elif data == "onboard_step1":
+        # Step 1: AWS account connect karo
+        message = "Step 1: Connect Your AWS Account\n\n"
+        message += "You'll need:\n"
+        message += "- AWS Access Key ID\n"
+        message += "- AWS Secret Access Key\n"
+        message += "- Your AWS Region\n\n"
+        message += "Don't have these? Here's how to get them:\n\n"
+        message += "1. Go to AWS Console\n"
+        message += "2. Navigate to IAM > Users\n"
+        message += "3. Create a new user with these policies:\n"
+        message += "   - AmazonEC2ReadOnlyAccess\n"
+        message += "   - CloudWatchReadOnlyAccess\n"
+        message += "   - AmazonRDSReadOnlyAccess\n"
+        message += "   - AmazonS3ReadOnlyAccess\n"
+        message += "4. Create Access Key and copy credentials\n\n"
+        message += "Then use this command:\n"
+        message += "/addaccount <name> <access_key> <secret_key> <region>\n\n"
+        message += "Example:\n"
+        message += "/addaccount Production AKIA... wJalr... us-east-1"
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("I've connected my account", callback_data="onboard_step2")],
+            [InlineKeyboardButton("Skip to Main Menu", callback_data="main_menu")]
+        ])
+        await query.edit_message_text(message, reply_markup=keyboard)
+
+    elif data == "onboard_step2":
+        # Step 2: Pehla alert set karo
+        accounts = db.get_aws_accounts(query.from_user.id)
+        if not accounts:
+            await query.edit_message_text(
+                "It looks like you haven't connected an AWS account yet.\n\n"
+                "Please use /addaccount first, then come back here.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Back", callback_data="onboard_step1")]
+                ])
+            )
+            return
+
+        message = "Step 2: Set Your First Alert\n\n"
+        message += "I recommend setting a daily cost alert.\n"
+        message += "This way you'll know if your AWS bill is getting too high.\n\n"
+        message += "Click below to set a cost alert now:"
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Set Cost Alert", callback_data="create_alert_step1")],
+            [InlineKeyboardButton("Skip to Main Menu", callback_data="onboard_done")]
+        ])
+        await query.edit_message_text(message, reply_markup=keyboard)
+
+    elif data == "onboard_done":
+        message = "You're all set!\n\n"
+        message += "Your AWS infrastructure is now being monitored.\n\n"
+        message += "What would you like to do?"
+        await query.edit_message_text(message, reply_markup=main_menu_keyboard())
 
     elif data == "show_status":
         await query.edit_message_text("Fetching AWS data...")
