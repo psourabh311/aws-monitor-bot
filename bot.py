@@ -412,13 +412,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Plan check karo - free user sirf 360+ min use kar sakta hai
         current_plan = db.get_user_plan(user_id)
         if current_plan == 'free' and interval < 360:
-            await query.edit_message_text(
-                "This check interval requires Premium.\n\n"
-                "Free plan allows checks every 6 hours or more.\n\n"
-                "Upgrade to Premium for 30-minute checks.\n\n"
-                "Click Upgrade in the main menu.",
-                reply_markup=main_menu_keyboard()
+            # Seedha payment window dikhao
+            payment_url, link_id = sub_manager.create_payment_link(
+                user_id=user_id,
+                plan_name='premium',
+                amount=499
             )
+            if payment_url:
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Pay Now - Rs.499", url=payment_url)],
+                    [InlineKeyboardButton("Payment Done", callback_data=f"verify_{link_id}")],
+                    [InlineKeyboardButton("Back", callback_data="show_upgrade")]
+                ])
+                message = "Premium Subscription\n\n"
+                message += "Plan: Premium\n"
+                message += "Amount: Rs.499/month\n"
+                message += "Duration: 30 days\n\n"
+                message += "How to proceed:\n"
+                message += "1. Click Pay Now\n"
+                message += "2. Complete payment via UPI, Card or Net Banking\n"
+                message += "3. Return here and click Payment Done\n\n"
+                message += "Your subscription will be activated instantly after payment verification."
+                await query.edit_message_text(message, reply_markup=keyboard)
+            else:
+                await query.edit_message_text("Payment link failed! Try again.", reply_markup=back_to_menu_keyboard())
             context.user_data.clear()
             return
 
