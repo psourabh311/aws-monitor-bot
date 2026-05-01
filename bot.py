@@ -46,6 +46,7 @@ def main_menu_keyboard():
             InlineKeyboardButton("Help", callback_data="show_help")
         ],
         [
+            InlineKeyboardButton("My Plan", callback_data="my_plan"),
             InlineKeyboardButton("Download PDF Report", callback_data="download_report")
         ],
         [
@@ -595,13 +596,113 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         accounts = db.get_aws_accounts(user_id)
         if not accounts:
             message = "No AWS account connected.\n\nClick /addaccount to link your AWS account and start monitoring."
+            await query.edit_message_text(message, reply_markup=back_to_menu_keyboard())
         else:
             message = "Your AWS Accounts:\n\n"
             for i, acc in enumerate(accounts, 1):
                 message += f"{i}. {acc['account_name']}\n"
                 message += f"   Region: {acc['aws_region']}\n"
                 message += f"   ID: {acc['account_id']}\n\n"
-        await query.edit_message_text(message, reply_markup=back_to_menu_keyboard())
+            message += "To remove an account, tap the button below."
+
+            keyboard_buttons = []
+            for acc in accounts:
+                keyboard_buttons.append([
+                    InlineKeyboardButton(
+                        f"Remove {acc['account_name']}",
+                        callback_data=f"delete_account_{acc['account_id']}"
+                    )
+                ])
+            keyboard_buttons.append([InlineKeyboardButton("Back to Menu", callback_data="main_menu")])
+            await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard_buttons))
+
+    elif data.startswith("delete_account_"):
+        account_id = int(data.replace("delete_account_", ""))
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Yes, Remove", callback_data=f"confirm_delete_{account_id}")],
+            [InlineKeyboardButton("Cancel", callback_data="list_accounts")]
+        ])
+        await query.edit_message_text(
+            "Are you sure you want to remove this AWS account?\n\n"
+            "All associated alerts will also be deleted.\n\n"
+            "This action cannot be undone.",
+            reply_markup=keyboard
+        )
+
+    elif data.startswith("confirm_delete_"):
+        account_id = int(data.replace("confirm_delete_", ""))
+        conn = db._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM alert_configs WHERE account_id = %s", (account_id,))
+            cursor.execute(
+                "UPDATE aws_accounts SET is_active = false WHERE account_id = %s AND user_id = %s",
+                (account_id, user_id)
+            )
+            conn.commit()
+            await query.edit_message_text(
+                "AWS account removed successfully.",
+                reply_markup=main_menu_keyboard()
+            )
+        except Exception as e:
+            conn.rollback()
+            await query.edit_message_text(f"Error: {str(e)}", reply_markup=back_to_menu_keyboard())
+        finally:
+            cursor.close()
+            db._put_conn(conn)
+
+    elif data == "my_plan":
+        current_plan = db.get_user_plan(user_id)
+
+        conn = db._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT plan_name, end_date FROM subscriptions
+                WHERE user_id = %s AND is_active = true
+                AND (end_date IS NULL OR end_date > NOW())
+                ORDER BY start_date DESC LIMIT 1
+            """, (user_id,))
+            sub = cursor.fetchone()
+        finally:
+            cursor.close()
+            db._put_conn(conn)
+
+        message = "My Plan\n\n"
+        message += f"Current Plan: {current_plan.upper()}\n\n"
+
+        if sub and sub[1]:
+            from datetime import datetime
+            days_left = (sub[1] - datetime.now()).days + 1
+            message += f"Expires: {sub[1].strftime('%d-%m-%Y')}\n"
+            message += f"Days remaining: {days_left}\n\n"
+        elif current_plan == 'free':
+            message += "No expiry - Free plan\n\n"
+
+        if current_plan == 'free':
+            message += "Free Plan Limits:\n"
+            message += "- 1 AWS account\n"
+            message += "- 5 alerts\n"
+            message += "- 6 hour check interval\n\n"
+            message += "Upgrade to Premium for more features!"
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Upgrade to Premium", callback_data="show_upgrade")],
+                [InlineKeyboardButton("Back to Menu", callback_data="main_menu")]
+            ])
+        else:
+            message += "Premium Benefits:\n"
+            message += "- 5 AWS accounts\n"
+            message += "- 50 alerts\n"
+            message += "- 30 min check interval\n"
+            message += "- Weekly reports\n"
+            message += "- Anomaly detection\n"
+            message += "- PDF reports"
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Renew Premium", callback_data="buy_premium")],
+                [InlineKeyboardButton("Back to Menu", callback_data="main_menu")]
+            ])
+
+        await query.edit_message_text(message, reply_markup=keyboard)
 
     elif data == "show_upgrade":
         current_plan = db.get_user_plan(user_id)
