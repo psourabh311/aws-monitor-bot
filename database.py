@@ -429,6 +429,105 @@ class Database:
             cursor.close()
             self._put_conn(conn)
 
+    # ─────────────────────────────────────────
+    # ADMIN OPERATIONS
+    # ─────────────────────────────────────────
+
+    def get_admin_stats(self):
+        """Admin ke liye bot statistics"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            stats = {}
+
+            # Total users
+            cursor.execute("SELECT COUNT(*) FROM users")
+            stats['total_users'] = cursor.fetchone()[0]
+
+            # Premium users
+            cursor.execute("""
+                SELECT COUNT(DISTINCT user_id) FROM subscriptions
+                WHERE is_active = true AND plan_name = 'premium'
+                AND (end_date IS NULL OR end_date > NOW())
+            """)
+            stats['premium_users'] = cursor.fetchone()[0]
+
+            # Free users
+            stats['free_users'] = stats['total_users'] - stats['premium_users']
+
+            # Total AWS accounts
+            cursor.execute("SELECT COUNT(*) FROM aws_accounts WHERE is_active = true")
+            stats['total_accounts'] = cursor.fetchone()[0]
+
+            # Active alerts
+            cursor.execute("SELECT COUNT(*) FROM alert_configs WHERE is_enabled = true")
+            stats['active_alerts'] = cursor.fetchone()[0]
+
+            # New users today
+            cursor.execute("""
+                SELECT COUNT(*) FROM users
+                WHERE created_at >= NOW() - INTERVAL '24 hours'
+            """)
+            stats['new_today'] = cursor.fetchone()[0]
+
+            # New users this week
+            cursor.execute("""
+                SELECT COUNT(*) FROM users
+                WHERE created_at >= NOW() - INTERVAL '7 days'
+            """)
+            stats['new_this_week'] = cursor.fetchone()[0]
+
+            # Revenue this month (premium subscriptions)
+            cursor.execute("""
+                SELECT COUNT(*) FROM subscriptions
+                WHERE plan_name = 'premium'
+                AND start_date >= DATE_TRUNC('month', NOW())
+            """)
+            premium_this_month = cursor.fetchone()[0]
+            stats['revenue_this_month'] = premium_this_month * 499
+
+            return stats
+
+        except Exception as e:
+            print(f"❌ Error fetching admin stats: {e}")
+            return {}
+        finally:
+            cursor.close()
+            self._put_conn(conn)
+
+    def get_all_users(self):
+        """Saare users ki list"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT u.user_id, u.username, u.first_name, u.created_at,
+                       COALESCE(s.plan_name, 'free') as plan
+                FROM users u
+                LEFT JOIN subscriptions s ON u.user_id = s.user_id
+                    AND s.is_active = true
+                    AND (s.end_date IS NULL OR s.end_date > NOW())
+                ORDER BY u.created_at DESC
+                LIMIT 20
+            """)
+            rows = cursor.fetchall()
+            users = []
+            for row in rows:
+                users.append({
+                    'user_id': row[0],
+                    'username': row[1],
+                    'first_name': row[2],
+                    'created_at': row[3],
+                    'plan': row[4]
+                })
+            return users
+        except Exception as e:
+            print(f"❌ Error fetching users: {e}")
+            return []
+        finally:
+            cursor.close()
+            self._put_conn(conn)
+
     def close(self):
         """Sab connections band karo"""
         self.pool.closeall()

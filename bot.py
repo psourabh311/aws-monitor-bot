@@ -699,6 +699,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_alert_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Step 3: User ne value type ki - Step 4 dikhao"""
+
+    # Admin broadcast check pehle
+    if await handle_admin_broadcast(update, context):
+        return
+
     if context.user_data.get('waiting_for') != 'alert_value':
         return
 
@@ -861,6 +866,129 @@ async def set_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Failed to save alert!")
 
 
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin panel - sirf admin access kar sakta hai"""
+    user_id = update.effective_user.id
+    admin_id = int(os.getenv('ADMIN_ID', '0'))
+
+    # Access check
+    if user_id != admin_id:
+        await update.message.reply_text("Access Denied.")
+        return
+
+    stats = db.get_admin_stats()
+
+    message = "Admin Panel\n\n"
+    message += f"Total Users: {stats.get('total_users', 0)}\n"
+    message += f"Premium Users: {stats.get('premium_users', 0)}\n"
+    message += f"Free Users: {stats.get('free_users', 0)}\n\n"
+    message += f"Revenue This Month: Rs.{stats.get('revenue_this_month', 0)}\n\n"
+    message += f"AWS Accounts: {stats.get('total_accounts', 0)}\n"
+    message += f"Active Alerts: {stats.get('active_alerts', 0)}\n\n"
+    message += f"New Users Today: {stats.get('new_today', 0)}\n"
+    message += f"New Users This Week: {stats.get('new_this_week', 0)}"
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("View Recent Users", callback_data="admin_users")],
+        [InlineKeyboardButton("Broadcast Message", callback_data="admin_broadcast")]
+    ])
+
+    await update.message.reply_text(message, reply_markup=keyboard)
+
+
+async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin button clicks"""
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    admin_id = int(os.getenv('ADMIN_ID', '0'))
+
+    if user_id != admin_id:
+        await query.edit_message_text("Access Denied.")
+        return
+
+    if query.data == "admin_users":
+        users = db.get_all_users()
+        message = "Recent Users (Last 20):\n\n"
+        for u in users:
+            plan_icon = "💎" if u['plan'] == 'premium' else "🆓"
+            name = u['first_name'] or 'Unknown'
+            username = f"@{u['username']}" if u['username'] else "no username"
+            message += f"{plan_icon} {name} ({username})\n"
+            message += f"   Joined: {u['created_at'].strftime('%d-%m-%Y')}\n\n"
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Back to Admin", callback_data="admin_back")]
+        ])
+        await query.edit_message_text(message, reply_markup=keyboard)
+
+    elif query.data == "admin_broadcast":
+        context.user_data['admin_waiting'] = 'broadcast'
+        await query.edit_message_text(
+            "Broadcast Message\n\n"
+            "Type your message and send.\n"
+            "It will be sent to ALL users.\n\n"
+            "Type /cancel to cancel."
+        )
+
+    elif query.data == "admin_back":
+        stats = db.get_admin_stats()
+        message = "Admin Panel\n\n"
+        message += f"Total Users: {stats.get('total_users', 0)}\n"
+        message += f"Premium Users: {stats.get('premium_users', 0)}\n"
+        message += f"Free Users: {stats.get('free_users', 0)}\n\n"
+        message += f"Revenue This Month: Rs.{stats.get('revenue_this_month', 0)}\n\n"
+        message += f"AWS Accounts: {stats.get('total_accounts', 0)}\n"
+        message += f"Active Alerts: {stats.get('active_alerts', 0)}\n\n"
+        message += f"New Users Today: {stats.get('new_today', 0)}\n"
+        message += f"New Users This Week: {stats.get('new_this_week', 0)}"
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("View Recent Users", callback_data="admin_users")],
+            [InlineKeyboardButton("Broadcast Message", callback_data="admin_broadcast")]
+        ])
+        await query.edit_message_text(message, reply_markup=keyboard)
+
+
+async def handle_admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin broadcast message saare users ko bhejo"""
+    if context.user_data.get('admin_waiting') != 'broadcast':
+        return False
+
+    admin_id = int(os.getenv('ADMIN_ID', '0'))
+    if update.effective_user.id != admin_id:
+        return False
+
+    broadcast_text = update.message.text
+    context.user_data['admin_waiting'] = None
+
+    # Saare users nikalo
+    conn = db._get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users")
+    users = cursor.fetchall()
+    cursor.close()
+    db._put_conn(conn)
+
+    sent = 0
+    failed = 0
+    for user in users:
+        try:
+            await context.bot.send_message(
+                chat_id=user[0],
+                text=f"📢 Message from AWS Monitor Bot:\n\n{broadcast_text}"
+            )
+            sent += 1
+        except Exception:
+            failed += 1
+
+    await update.message.reply_text(
+        f"Broadcast Complete!\n\nSent: {sent}\nFailed: {failed}"
+    )
+    return True
+
+
 async def delete_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) != 1:
         await update.message.reply_text("Usage: /deletealert <alert_id>")
@@ -920,6 +1048,8 @@ def main():
     app.add_handler(CommandHandler("addaccount", add_account))
     app.add_handler(CommandHandler("setalert", set_alert))
     app.add_handler(CommandHandler("deletealert", delete_alert))
+    app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_alert_value))
     app.add_error_handler(error_handler)
