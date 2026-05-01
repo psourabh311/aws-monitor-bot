@@ -739,8 +739,8 @@ async def handle_alert_value(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("Every 30 min (Premium)", callback_data="alert_interval_30"),
-                InlineKeyboardButton("Every 1 hour (Premium)", callback_data="alert_interval_60")
+                InlineKeyboardButton("⭐ 30 min — Premium only", callback_data="alert_interval_30"),
+                InlineKeyboardButton("⭐ 1 hour — Premium only", callback_data="alert_interval_60")
             ],
             [
                 InlineKeyboardButton("Every 6 hours", callback_data="alert_interval_360"),
@@ -748,7 +748,7 @@ async def handle_alert_value(update: Update, context: ContextTypes.DEFAULT_TYPE)
             ],
             [InlineKeyboardButton("Cancel", callback_data="alert_menu")]
         ])
-        step4_msg = f"Step 4 of 4: How often should I check?\n(30 min & 1 hour require Premium)"
+        step4_msg = f"Step 4 of 4: How often should I check?\n\n⭐ = Premium feature — tap to unlock"
 
     await update.message.reply_text(
         f"Create New Alert\n\n"
