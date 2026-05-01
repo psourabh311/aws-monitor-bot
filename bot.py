@@ -75,7 +75,7 @@ def account_select_keyboard(accounts, action):
 async def get_status_message(user_id, account_id=None):
     accounts = db.get_aws_accounts(user_id)
     if not accounts:
-        return "No AWS account connected!\n\nUse Add Account button.", None
+        return "No AWS account connected.\n\nClick /addaccount to link your AWS account and start monitoring.", back_to_menu_keyboard()
 
     account = next((a for a in accounts if a['account_id'] == account_id), accounts[0]) if account_id else accounts[0]
     creds = db.get_aws_credentials(account['account_id'])
@@ -122,7 +122,7 @@ async def get_status_message(user_id, account_id=None):
 async def get_costs_message(user_id, account_id=None):
     accounts = db.get_aws_accounts(user_id)
     if not accounts:
-        return "No AWS account connected!\n\nUse Add Account button.", None
+        return "No AWS account connected.\n\nClick /addaccount to link your AWS account and start monitoring.", back_to_menu_keyboard()
 
     account = next((a for a in accounts if a['account_id'] == account_id), accounts[0]) if account_id else accounts[0]
     creds = db.get_aws_credentials(account['account_id'])
@@ -238,7 +238,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         accounts = db.get_aws_accounts(user_id)
         if not accounts:
-            await query.edit_message_text("No AWS account connected!", reply_markup=back_to_menu_keyboard())
+            await query.edit_message_text(
+                "No AWS account connected.\n\nClick /addaccount to link your AWS account and start monitoring.",
+                reply_markup=back_to_menu_keyboard()
+            )
             return
 
         account = accounts[0]
@@ -283,7 +286,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         accounts = db.get_aws_accounts(user_id)
         if not accounts:
-            await query.edit_message_text("No AWS account connected!", reply_markup=back_to_menu_keyboard())
+            await query.edit_message_text(
+                "No AWS account connected.\n\nClick /addaccount to link your AWS account and start monitoring.",
+                reply_markup=back_to_menu_keyboard()
+            )
             return
 
         account = accounts[0]
@@ -365,13 +371,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += "  - AmazonEC2ReadOnlyAccess\n"
         message += "  - CloudWatchReadOnlyAccess\n"
         message += "  - AmazonRDSReadOnlyAccess\n"
+        message += "  - AmazonS3ReadOnlyAccess\n"
         message += "  - CostExplorerAccess\n\n"
         message += "Step 4: Copy Access Key and Secret Key\n\n"
-        message += "Step 5: Use command:\n"
+        message += "Step 5: Type this command:\n\n"
         message += "/addaccount <name> <access_key> <secret_key> <region>\n\n"
         message += "Example:\n"
-        message += "/addaccount Production AKIA... wJalr... us-east-1"
-        await query.edit_message_text(message, reply_markup=back_to_menu_keyboard())
+        message += "/addaccount Production AKIA... wJalr... us-east-1\n\n"
+        message += "Available Regions:\n"
+        message += "- us-east-1 (N. Virginia)\n"
+        message += "- ap-south-1 (Mumbai)\n"
+        message += "- eu-west-1 (Ireland)\n"
+        message += "- ap-southeast-1 (Singapore)"
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Back to Menu", callback_data="main_menu")]
+        ])
+        await query.edit_message_text(message, reply_markup=keyboard)
 
     elif data == "list_accounts":
         accounts = db.get_aws_accounts(user_id)
