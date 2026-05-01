@@ -392,7 +392,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "list_accounts":
         accounts = db.get_aws_accounts(user_id)
         if not accounts:
-            message = "No AWS accounts connected!\n\nUse Add Account button."
+            message = "No AWS account connected.\n\nClick /addaccount to link your AWS account and start monitoring."
         else:
             message = "Your AWS Accounts:\n\n"
             for i, acc in enumerate(accounts, 1):
@@ -480,7 +480,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         accounts = db.get_aws_accounts(user_id)
         if not accounts:
-            await query.edit_message_text("No AWS account connected!", reply_markup=back_to_menu_keyboard())
+            await query.edit_message_text(
+                "No AWS account connected.\n\nClick /addaccount to link your AWS account and start monitoring.",
+                reply_markup=back_to_menu_keyboard()
+            )
             return
 
         account = accounts[0]
