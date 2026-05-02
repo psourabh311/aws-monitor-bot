@@ -50,3 +50,25 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     end_date        TIMESTAMP,
     is_active       BOOLEAN DEFAULT true
 );
+
+-- Referral code column
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(20) UNIQUE;
+
+-- Referrals table
+CREATE TABLE IF NOT EXISTS referrals (
+    referral_id SERIAL PRIMARY KEY,
+    referrer_id BIGINT REFERENCES users(user_id),
+    referred_id BIGINT REFERENCES users(user_id),
+    created_at  TIMESTAMP DEFAULT NOW(),
+    reward_given BOOLEAN DEFAULT false
+);
+
+-- Alert History table
+CREATE TABLE IF NOT EXISTS alert_history (
+    history_id      SERIAL PRIMARY KEY,
+    config_id       INT REFERENCES alert_configs(config_id),
+    triggered_at    TIMESTAMP DEFAULT NOW(),
+    triggered_value FLOAT
+);
+
+SELECT 'All tables created successfully!' AS status;
