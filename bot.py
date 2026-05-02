@@ -9,12 +9,17 @@ from aws_monitor import AWSMonitor
 from scheduler import AlertScheduler
 from subscription import SubscriptionManager, PLANS
 from report import ReportGenerator
+from charts import ChartGenerator
 
 load_dotenv()
 
 db = Database()
 sub_manager = SubscriptionManager()
 report_gen = ReportGenerator()
+chart_gen = ChartGenerator()
+
+# Chart usage tracking (per week limit)
+chart_usage = {}  # {user_id: {'count': 0, 'week': week_number}}
 
 # Conversation states
 ALERT_METRIC, ALERT_OPERATOR, ALERT_VALUE, ALERT_INTERVAL = range(4)
@@ -50,6 +55,7 @@ def main_menu_keyboard():
             InlineKeyboardButton("Download PDF Report", callback_data="download_report")
         ],
         [
+            InlineKeyboardButton("Cost Chart", callback_data="show_chart_menu"),
             InlineKeyboardButton("Refer a Friend", callback_data="show_referral")
         ]
     ])
@@ -845,6 +851,150 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         except Exception as e:
             await query.edit_message_text(f"Error generating report: {str(e)}", reply_markup=back_to_menu_keyboard())
+
+    elif data == "show_chart_menu":
+        current_plan = db.get_user_plan(user_id)
+
+        # Weekly usage check
+        from datetime import datetime
+        current_week = datetime.now().isocalendar()[1]
+        user_usage = chart_usage.get(user_id, {'count': 0, 'week': current_week})
+
+        # Reset if new week
+        if user_usage['week'] != current_week:
+            user_usage = {'count': 0, 'week': current_week}
+            chart_usage[user_id] = user_usage
+
+        free_limit = 1
+        used = user_usage['count']
+        remaining = max(0, free_limit - used) if current_plan == 'free' else 'Unlimited'
+
+        if current_plan == 'free':
+            message = f"Cost Chart\n\nFree plan: {used}/{free_limit} charts used this week\n\nChoose time range:"
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("7 Days", callback_data="chart_7"),
+                    InlineKeyboardButton("30 Days", callback_data="chart_30")
+                ],
+                [
+                    InlineKeyboardButton("⭐ 90 Days — Premium", callback_data="chart_90"),
+                    InlineKeyboardButton("⭐ 180 Days — Premium", callback_data="chart_180")
+                ],
+                [InlineKeyboardButton("Back to Menu", callback_data="main_menu")]
+            ])
+        else:
+            message = "Cost Chart\n\nPremium: Unlimited charts\n\nChoose time range:"
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("7 Days", callback_data="chart_7"),
+                    InlineKeyboardButton("30 Days", callback_data="chart_30")
+                ],
+                [
+                    InlineKeyboardButton("90 Days", callback_data="chart_90"),
+                    InlineKeyboardButton("180 Days", callback_data="chart_180")
+                ],
+                [InlineKeyboardButton("Back to Menu", callback_data="main_menu")]
+            ])
+
+        await query.edit_message_text(message, reply_markup=keyboard)
+
+    elif data.startswith("chart_"):
+        days = int(data.replace("chart_", ""))
+        current_plan = db.get_user_plan(user_id)
+
+        # Premium check for 90/180 days
+        if days >= 90 and current_plan == 'free':
+            payment_url, link_id = sub_manager.create_payment_link(user_id, 'premium', 499)
+            if payment_url:
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Pay Now - Rs.499", url=payment_url)],
+                    [InlineKeyboardButton("Payment Done", callback_data=f"verify_{link_id}")],
+                    [InlineKeyboardButton("Back", callback_data="show_chart_menu")]
+                ])
+                await query.edit_message_text(
+                    "This time range requires Premium.\n\nUpgrade to access 90 and 180 day charts.",
+                    reply_markup=keyboard
+                )
+            return
+
+        # Weekly limit check for free users
+        from datetime import datetime
+        current_week = datetime.now().isocalendar()[1]
+        user_usage = chart_usage.get(user_id, {'count': 0, 'week': current_week})
+
+        if user_usage['week'] != current_week:
+            user_usage = {'count': 0, 'week': current_week}
+
+        if current_plan == 'free' and user_usage['count'] >= 1:
+            payment_url, link_id = sub_manager.create_payment_link(user_id, 'premium', 499)
+            if payment_url:
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Pay Now - Rs.499", url=payment_url)],
+                    [InlineKeyboardButton("Payment Done", callback_data=f"verify_{link_id}")],
+                    [InlineKeyboardButton("Back", callback_data="show_chart_menu")]
+                ])
+                await query.edit_message_text(
+                    "You've used your free chart for this week.\n\nUpgrade to Premium for unlimited charts.",
+                    reply_markup=keyboard
+                )
+            return
+
+        await query.edit_message_text(f"Generating {days}-day cost chart...")
+
+        accounts = db.get_aws_accounts(user_id)
+        if not accounts:
+            await query.edit_message_text(
+                "No AWS account connected.\n\nClick /addaccount to link your AWS account.",
+                reply_markup=back_to_menu_keyboard()
+            )
+            return
+
+        account = accounts[0]
+        creds = db.get_aws_credentials(account['account_id'])
+
+        try:
+            monitor = AWSMonitor(creds['access_key'], creds['secret_key'], creds['region'])
+            cost_data = chart_gen.prepare_cost_data(monitor, days)
+
+            if not cost_data:
+                await query.edit_message_text(
+                    "Not enough data to generate chart.",
+                    reply_markup=back_to_menu_keyboard()
+                )
+                return
+
+            period_labels = {7: 'Last 7 Days', 30: 'Last 30 Days',
+                           90: 'Last 90 Days', 180: 'Last 6 Months'}
+            title = f"AWS Cost Trend - {period_labels.get(days, f'Last {days} Days')}"
+
+            chart_buf = chart_gen.generate_cost_chart(cost_data, title, period_labels.get(days, ''))
+
+            if chart_buf:
+                # Usage count update karo
+                user_usage['count'] += 1
+                user_usage['week'] = current_week
+                chart_usage[user_id] = user_usage
+
+                from telegram import InputFile
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("View Interactive Chart", url=f"http://13.217.96.93:5000/chart/{user_id}")],
+                    [InlineKeyboardButton("Back to Menu", callback_data="main_menu")]
+                ])
+
+                await query.message.reply_photo(
+                    photo=InputFile(chart_buf, filename=f'cost_chart_{days}d.png'),
+                    caption=f"AWS Cost Chart - Last {days} Days\nAccount: {account['account_name']}",
+                    reply_markup=keyboard
+                )
+                await query.edit_message_text(
+                    "Chart generated!",
+                    reply_markup=main_menu_keyboard()
+                )
+            else:
+                await query.edit_message_text("Failed to generate chart!", reply_markup=back_to_menu_keyboard())
+
+        except Exception as e:
+            await query.edit_message_text(f"Error: {str(e)}", reply_markup=back_to_menu_keyboard())
 
     elif data == "show_referral":
         code = db.get_or_create_referral_code(user_id)
