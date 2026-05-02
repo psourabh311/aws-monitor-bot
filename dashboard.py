@@ -64,8 +64,10 @@ ADMIN_HTML = """
             <div class="stat-card"><div class="label">Total Users</div><div class="value" id="totalUsers">-</div></div>
             <div class="stat-card"><div class="label">Premium Users</div><div class="value" id="premiumUsers">-</div></div>
             <div class="stat-card"><div class="label">Revenue This Month</div><div class="value" id="revenue">-</div></div>
+            <div class="stat-card"><div class="label">Total Revenue</div><div class="value" id="totalRevenue">-</div></div>
             <div class="stat-card"><div class="label">AWS Accounts</div><div class="value" id="accounts">-</div></div>
             <div class="stat-card"><div class="label">Active Alerts</div><div class="value" id="alerts">-</div></div>
+            <div class="stat-card"><div class="label">New Users Today</div><div class="value" id="newToday">-</div></div>
             <div class="stat-card"><div class="label">New This Week</div><div class="value" id="newWeek">-</div></div>
         </div>
         <div class="charts-grid">
@@ -103,8 +105,10 @@ ADMIN_HTML = """
             document.getElementById('totalUsers').textContent = data.total_users;
             document.getElementById('premiumUsers').textContent = data.premium_users;
             document.getElementById('revenue').textContent = `Rs.${data.revenue_this_month}`;
+            document.getElementById('totalRevenue').textContent = `Rs.${data.total_revenue || 0}`;
             document.getElementById('accounts').textContent = data.total_accounts;
             document.getElementById('alerts').textContent = data.active_alerts;
+            document.getElementById('newToday').textContent = data.new_today;
             document.getElementById('newWeek').textContent = data.new_this_week;
             document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
 

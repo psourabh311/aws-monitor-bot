@@ -533,12 +533,32 @@ class Database:
 
             # Revenue this month (premium subscriptions)
             cursor.execute("""
-                SELECT COUNT(*) FROM subscriptions
-                WHERE plan_name = 'premium'
-                AND start_date >= DATE_TRUNC('month', NOW())
+                SELECT COUNT(*), SUM(
+                    CASE plan_name
+                        WHEN 'premium' THEN 499
+                        ELSE 0
+                    END
+                )
+                FROM subscriptions
+                WHERE start_date >= DATE_TRUNC('month', NOW())
             """)
-            premium_this_month = cursor.fetchone()[0]
-            stats['revenue_this_month'] = premium_this_month * 499
+            row = cursor.fetchone()
+            stats['revenue_this_month'] = int(row[1] or 0)
+            stats['subscriptions_this_month'] = int(row[0] or 0)
+
+            # Total revenue all time
+            cursor.execute("""
+                SELECT SUM(
+                    CASE plan_name
+                        WHEN 'premium' THEN 499
+                        ELSE 0
+                    END
+                )
+                FROM subscriptions
+                WHERE plan_name = 'premium'
+            """)
+            total_rev = cursor.fetchone()[0]
+            stats['total_revenue'] = int(total_rev or 0)
 
             return stats
 
