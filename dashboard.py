@@ -125,6 +125,31 @@ ADMIN_HTML = """
             });
         }
 
+        async function loadUserGrowth() {
+            const res = await fetch(`/api/admin/user-growth?secret=${SECRET}`);
+            const data = await res.json();
+
+            new Chart(document.getElementById('userChart'), {
+                type: 'bar',
+                data: {
+                    labels: data.map(d => d.date),
+                    datasets: [{
+                        label: 'New Users',
+                        data: data.map(d => d.count),
+                        backgroundColor: '#00d4ff',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    plugins: { legend: { labels: { color: '#fff' } } },
+                    scales: {
+                        x: { ticks: { color: '#888' }, grid: { color: '#222' } },
+                        y: { ticks: { color: '#888', stepSize: 1 }, grid: { color: '#222' } }
+                    }
+                }
+            });
+        }
+
         async function loadUsers() {
             const res = await fetch(`/api/admin/users?secret=${SECRET}`);
             const users = await res.json();
@@ -140,6 +165,7 @@ ADMIN_HTML = """
         }
 
         loadStats();
+        loadUserGrowth();
         loadUsers();
         setInterval(loadStats, 30000); // 30 sec mein refresh
     </script>
@@ -330,6 +356,32 @@ def api_admin_users():
             'created_at': u['created_at'].strftime('%d-%m-%Y') if u['created_at'] else '-'
         })
     return jsonify(result)
+
+@app.route('/api/admin/user-growth')
+def api_user_growth():
+    secret = request.args.get('secret', '')
+    if secret != DASHBOARD_SECRET:
+        abort(403)
+
+    conn = db._get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT DATE(created_at) as date, COUNT(*) as count
+            FROM users
+            WHERE created_at >= NOW() - INTERVAL '30 days'
+            GROUP BY DATE(created_at)
+            ORDER BY date
+        """)
+        rows = cursor.fetchall()
+        data = [{'date': str(row[0]), 'count': row[1]} for row in rows]
+        return jsonify(data)
+    except Exception as e:
+        return jsonify([])
+    finally:
+        cursor.close()
+        db._put_conn(conn)
+
 
 @app.route('/api/user/chart-data')
 def api_user_chart_data():
