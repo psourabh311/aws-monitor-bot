@@ -1,5 +1,6 @@
 import os
 import asyncio
+from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (Application, CommandHandler, CallbackQueryHandler,
@@ -1210,6 +1211,98 @@ async def set_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Failed to save alert!")
 
 
+async def myplan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/myplan command - plan details dikhao"""
+    user_id = update.effective_user.id
+    current_plan = db.get_user_plan(user_id)
+
+    conn = db._get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT plan_name, end_date FROM subscriptions
+            WHERE user_id = %s AND is_active = true
+            AND (end_date IS NULL OR end_date > NOW())
+            ORDER BY start_date DESC LIMIT 1
+        """, (user_id,))
+        sub = cursor.fetchone()
+    finally:
+        cursor.close()
+        db._put_conn(conn)
+
+    message = "My Plan\n\n"
+    message += f"Current Plan: {current_plan.upper()}\n\n"
+
+    if sub and sub[1]:
+        days_left = (sub[1] - datetime.now()).days + 1
+        message += f"Expires: {sub[1].strftime('%d-%m-%Y')}\n"
+        message += f"Days remaining: {days_left}\n\n"
+    elif current_plan == 'free':
+        message += "No expiry - Free plan\n\n"
+
+    if current_plan == 'free':
+        message += "Upgrade to Premium for:\n"
+        message += "- 30 min alert checks\n"
+        message += "- Weekly reports\n"
+        message += "- Anomaly detection\n"
+        message += "- PDF reports\n"
+        message += "- 90/180 day charts"
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Upgrade to Premium", callback_data="show_upgrade")],
+            [InlineKeyboardButton("Back to Menu", callback_data="main_menu")]
+        ])
+    else:
+        message += "Premium Benefits Active:\n"
+        message += "- 30 min alert checks\n"
+        message += "- Weekly reports\n"
+        message += "- Anomaly detection\n"
+        message += "- PDF reports\n"
+        message += "- 90/180 day charts"
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Renew Premium", callback_data="buy_premium")],
+            [InlineKeyboardButton("Back to Menu", callback_data="main_menu")]
+        ])
+
+    await update.message.reply_text(message, reply_markup=keyboard)
+
+
+async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/support command"""
+    user = update.effective_user
+    admin_id = int(os.getenv('ADMIN_ID', '0'))
+
+    if context.args:
+        # User ne message diya - admin ko forward karo
+        support_msg = ' '.join(context.args)
+
+        # Admin ko notify karo
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=f"Support Request\n\n"
+                     f"From: {user.first_name} (@{user.username})\n"
+                     f"ID: {user.id}\n\n"
+                     f"Message: {support_msg}"
+            )
+            await update.message.reply_text(
+                "Your message has been sent to support.\n\n"
+                "We'll get back to you soon!",
+                reply_markup=main_menu_keyboard()
+            )
+        except Exception as e:
+            await update.message.reply_text("Failed to send message. Try again later.")
+    else:
+        await update.message.reply_text(
+            "Support\n\n"
+            "To contact support, use:\n"
+            "/support <your message>\n\n"
+            "Example:\n"
+            "/support I can't connect my AWS account\n\n"
+            "We typically respond within 24 hours.",
+            reply_markup=main_menu_keyboard()
+        )
+
+
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin panel - sirf admin access kar sakta hai"""
     user_id = update.effective_user.id
@@ -1393,6 +1486,8 @@ def main():
     app.add_handler(CommandHandler("setalert", set_alert))
     app.add_handler(CommandHandler("deletealert", delete_alert))
     app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(CommandHandler("myplan", myplan_command))
+    app.add_handler(CommandHandler("support", support_command))
     app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_alert_value))
