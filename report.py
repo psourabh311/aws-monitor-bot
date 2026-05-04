@@ -9,14 +9,14 @@ from datetime import datetime
 
 
 class ReportGenerator:
-    """PDF Monthly Report generate karta hai"""
+    """Generates PDF monthly reports for AWS usage and costs"""
 
     def generate_monthly_report(self, user_data, aws_data):
         """
-        Complete monthly PDF report banao.
-        user_data: user info dict
-        aws_data: AWS se fetched data dict
-        Returns: BytesIO object (PDF bytes)
+        Generate a complete monthly PDF report.
+        user_data: dict with user info
+        aws_data: dict with AWS fetched data
+        Returns: BytesIO object containing PDF bytes
         """
         buffer = BytesIO()
 
@@ -239,7 +239,7 @@ class ReportGenerator:
             footer_style
         ))
 
-        # PDF build karo
+        # Build and return the PDF
         doc.build(content)
         buffer.seek(0)
         return buffer
