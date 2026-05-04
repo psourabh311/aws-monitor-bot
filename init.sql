@@ -1,46 +1,45 @@
 -- =============================================
--- AWS Monitor Bot - Database Tables
+-- AWS Monitor Bot - Database Schema
 -- =============================================
 
 -- Users table
--- Har baar koi /start kare to uska data yahan save hoga
+-- Stores all users who have started the bot
 CREATE TABLE IF NOT EXISTS users (
-    user_id     BIGINT PRIMARY KEY,        -- Telegram ka unique user ID
-    username    VARCHAR(100),              -- @username
-    first_name  VARCHAR(100),              -- User ka naam
-    created_at  TIMESTAMP DEFAULT NOW()   -- Kab join kiya
+    user_id     BIGINT PRIMARY KEY,        -- Telegram unique user ID
+    username    VARCHAR(100),              -- Telegram @username
+    first_name  VARCHAR(100),              -- User's first name
+    referral_code VARCHAR(20) UNIQUE,      -- Unique referral code
+    created_at  TIMESTAMP DEFAULT NOW()    -- Account creation timestamp
 );
 
 -- AWS Accounts table
--- User ne jo AWS account connect kiya wo yahan save hoga
+-- Stores connected AWS accounts with encrypted credentials
 CREATE TABLE IF NOT EXISTS aws_accounts (
-    account_id              SERIAL PRIMARY KEY,                        -- Auto number 1,2,3...
-    user_id                 BIGINT REFERENCES users(user_id),          -- Kis user ka account
-    account_name            VARCHAR(100),                              -- "Production", "Testing"
-    aws_region              VARCHAR(50),                               -- "ap-south-1"
-    aws_access_key_encrypted TEXT,                                     -- Encrypted access key
-    aws_secret_key_encrypted TEXT,                                     -- Encrypted secret key
-    is_active               BOOLEAN DEFAULT true,                      -- Active hai ya nahi
-    created_at              TIMESTAMP DEFAULT NOW()
+    account_id               SERIAL PRIMARY KEY,
+    user_id                  BIGINT REFERENCES users(user_id),
+    account_name             VARCHAR(100),                     -- e.g. "Production", "Testing"
+    aws_region               VARCHAR(50),                      -- e.g. "us-east-1"
+    aws_access_key_encrypted TEXT,                             -- AES-256 encrypted access key
+    aws_secret_key_encrypted TEXT,                             -- AES-256 encrypted secret key
+    is_active                BOOLEAN DEFAULT true,
+    created_at               TIMESTAMP DEFAULT NOW()
 );
 
--- Alert Configs table
--- User ne jo alerts set kiye wo yahan save honge
+-- Alert Configurations table
+-- Stores user-defined alert rules
 CREATE TABLE IF NOT EXISTS alert_configs (
     config_id           SERIAL PRIMARY KEY,
-    account_id          INT REFERENCES aws_accounts(account_id),  -- Kis account ka alert
-    metric_name         VARCHAR(100),                             -- "daily_cost", "cpu_average"
-    threshold_value     FLOAT,                                    -- 500, 80 etc
-    comparison_operator VARCHAR(10),                              -- ">", "<", ">="
-    check_interval      INT,                                      -- Har kitne minutes mein check
+    account_id          INT REFERENCES aws_accounts(account_id),
+    metric_name         VARCHAR(100),   -- e.g. "daily_cost", "cpu_average"
+    threshold_value     FLOAT,          -- e.g. 10.0, 80.0
+    comparison_operator VARCHAR(10),    -- e.g. ">", "<", ">="
+    check_interval      INT,            -- Check frequency in minutes
     is_enabled          BOOLEAN DEFAULT true,
     created_at          TIMESTAMP DEFAULT NOW()
 );
 
--- Confirm message
-SELECT 'Tables created successfully!' AS status;
-
 -- Subscriptions table
+-- Tracks user subscription plans and payment history
 CREATE TABLE IF NOT EXISTS subscriptions (
     sub_id          SERIAL PRIMARY KEY,
     user_id         BIGINT REFERENCES users(user_id),
@@ -51,19 +50,18 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     is_active       BOOLEAN DEFAULT true
 );
 
--- Referral code column
-ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(20) UNIQUE;
-
 -- Referrals table
+-- Tracks referral relationships between users
 CREATE TABLE IF NOT EXISTS referrals (
-    referral_id SERIAL PRIMARY KEY,
-    referrer_id BIGINT REFERENCES users(user_id),
-    referred_id BIGINT REFERENCES users(user_id),
-    created_at  TIMESTAMP DEFAULT NOW(),
+    referral_id  SERIAL PRIMARY KEY,
+    referrer_id  BIGINT REFERENCES users(user_id),
+    referred_id  BIGINT REFERENCES users(user_id),
+    created_at   TIMESTAMP DEFAULT NOW(),
     reward_given BOOLEAN DEFAULT false
 );
 
 -- Alert History table
+-- Records every time an alert is triggered
 CREATE TABLE IF NOT EXISTS alert_history (
     history_id      SERIAL PRIMARY KEY,
     config_id       INT REFERENCES alert_configs(config_id),
