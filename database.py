@@ -4,18 +4,17 @@ from psycopg2 import pool
 from dotenv import load_dotenv
 from security import SecurityManager
 
-# .env file load karo
+# Load environment variables
 load_dotenv()
 
 class Database:
-    """PostgreSQL se saare kaam karta hai"""
+    """Handles all PostgreSQL database operations"""
 
     def __init__(self):
-        # Security manager - credentials encrypt/decrypt ke liye
+        # Initialize security manager for credential encryption/decryption
         self.security = SecurityManager()
 
-        # Database connection pool banao
-        # Min 1, Max 10 connections ready rehenge
+        # Create connection pool (min 1, max 10 connections)
         try:
             self.pool = psycopg2.pool.SimpleConnectionPool(
                 1, 10,
@@ -24,17 +23,17 @@ class Database:
                 user=os.getenv('DB_USER', 'postgres'),
                 password=os.getenv('DB_PASSWORD')
             )
-            print("✅ Database connected!")
+            print("Database connected!")
         except Exception as e:
-            print(f"❌ Database connection failed: {e}")
+            print(f"Database connection failed: {e}")
             raise
 
     def _get_conn(self):
-        """Pool se ek connection lo"""
+        """Get a connection from the pool"""
         return self.pool.getconn()
 
     def _put_conn(self, conn):
-        """Connection wapas pool mein do"""
+        """Return a connection back to the pool"""
         self.pool.putconn(conn)
 
     # ─────────────────────────────────────────
@@ -42,7 +41,7 @@ class Database:
     # ─────────────────────────────────────────
 
     def add_user(self, user_id, username, first_name):
-        """Naya user save karo - agar already hai to ignore karo"""
+        """Save a new user - ignore if already exists"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -52,18 +51,18 @@ class Database:
                 ON CONFLICT (user_id) DO NOTHING
             """, (user_id, username, first_name))
             conn.commit()
-            print(f"✅ User saved: {first_name}")
+            print(f"User saved: {first_name}")
             return True
         except Exception as e:
             conn.rollback()
-            print(f"❌ Error saving user: {e}")
+            print(f"Error saving user: {e}")
             return False
         finally:
             cursor.close()
             self._put_conn(conn)
 
     def get_user(self, user_id):
-        """User ka data nikalo"""
+        """Fetch user data by user_id"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -76,7 +75,7 @@ class Database:
                 return {'user_id': row[0], 'username': row[1], 'first_name': row[2]}
             return None
         except Exception as e:
-            print(f"❌ Error fetching user: {e}")
+            print(f"Error fetching user: {e}")
             return None
         finally:
             cursor.close()
@@ -87,11 +86,11 @@ class Database:
     # ─────────────────────────────────────────
 
     def add_aws_account(self, user_id, account_name, access_key, secret_key, region):
-        """AWS account encrypted form mein save karo"""
+        """Save AWS account with encrypted credentials"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
-            # Credentials encrypt karo pehle
+            # Encrypt credentials before storing
             encrypted_access = self.security.encrypt(access_key)
             encrypted_secret = self.security.encrypt(secret_key)
 
@@ -104,18 +103,18 @@ class Database:
 
             account_id = cursor.fetchone()[0]
             conn.commit()
-            print(f"✅ AWS account saved! ID: {account_id}")
+            print(f"AWS account saved! ID: {account_id}")
             return account_id
         except Exception as e:
             conn.rollback()
-            print(f"❌ Error saving AWS account: {e}")
+            print(f"Error saving AWS account: {e}")
             return None
         finally:
             cursor.close()
             self._put_conn(conn)
 
     def get_aws_accounts(self, user_id):
-        """User ke saare AWS accounts nikalo"""
+        """Get all active AWS accounts for a user"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -134,14 +133,14 @@ class Database:
                 })
             return accounts
         except Exception as e:
-            print(f"❌ Error fetching accounts: {e}")
+            print(f"Error fetching accounts: {e}")
             return []
         finally:
             cursor.close()
             self._put_conn(conn)
 
     def get_aws_credentials(self, account_id):
-        """Encrypted credentials nikalo aur decrypt karke do"""
+        """Fetch and decrypt AWS credentials for an account"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -159,7 +158,7 @@ class Database:
                 }
             return None
         except Exception as e:
-            print(f"❌ Error fetching credentials: {e}")
+            print(f"Error fetching credentials: {e}")
             return None
         finally:
             cursor.close()
@@ -170,7 +169,7 @@ class Database:
     # ─────────────────────────────────────────
 
     def add_alert(self, account_id, metric_name, threshold, operator, interval):
-        """Naya alert config save karo"""
+        """Save a new alert configuration"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -182,18 +181,18 @@ class Database:
             """, (account_id, metric_name, threshold, operator, interval))
             config_id = cursor.fetchone()[0]
             conn.commit()
-            print(f"✅ Alert saved! ID: {config_id}")
+            print(f"Alert saved! ID: {config_id}")
             return config_id
         except Exception as e:
             conn.rollback()
-            print(f"❌ Error saving alert: {e}")
+            print(f"Error saving alert: {e}")
             return None
         finally:
             cursor.close()
             self._put_conn(conn)
 
     def get_user_alerts(self, user_id):
-        """User ke saare alerts nikalo"""
+        """Get all active alerts for a user"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -216,14 +215,14 @@ class Database:
                 })
             return alerts
         except Exception as e:
-            print(f"❌ Error fetching alerts: {e}")
+            print(f"Error fetching alerts: {e}")
             return []
         finally:
             cursor.close()
             self._put_conn(conn)
 
     def get_all_active_alerts(self):
-        """Scheduler ke liye - saare active alerts nikalo"""
+        """Get all active alerts across all users (used by scheduler)"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -249,7 +248,7 @@ class Database:
                 })
             return alerts
         except Exception as e:
-            print(f"❌ Error fetching active alerts: {e}")
+            print(f"Error fetching active alerts: {e}")
             return []
         finally:
             cursor.close()
@@ -260,7 +259,7 @@ class Database:
     # ─────────────────────────────────────────
 
     def get_user_plan(self, user_id):
-        """User ka current plan nikalo - default free"""
+        """Get user's current subscription plan (defaults to free)"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -273,27 +272,27 @@ class Database:
             row = cursor.fetchone()
             return row[0] if row else 'free'
         except Exception as e:
-            print(f"❌ Error fetching plan: {e}")
+            print(f"Error fetching plan: {e}")
             return 'free'
         finally:
             cursor.close()
             self._put_conn(conn)
 
     def create_subscription(self, user_id, plan_name, payment_link_id):
-        """Naya subscription create karo"""
+        """Create a new subscription after successful payment"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
             from datetime import datetime, timedelta
             end_date = datetime.now() + timedelta(days=30)
 
-            # Purana subscription deactivate karo
+            # Deactivate existing subscription
             cursor.execute("""
                 UPDATE subscriptions SET is_active = false
                 WHERE user_id = %s
             """, (user_id,))
 
-            # Naya subscription add karo
+            # Create new subscription
             cursor.execute("""
                 INSERT INTO subscriptions
                     (user_id, plan_name, payment_link_id, end_date)
@@ -303,11 +302,11 @@ class Database:
 
             sub_id = cursor.fetchone()[0]
             conn.commit()
-            print(f"✅ Subscription created! ID: {sub_id}")
+            print(f"Subscription created! ID: {sub_id}")
             return sub_id
         except Exception as e:
             conn.rollback()
-            print(f"❌ Error creating subscription: {e}")
+            print(f"Error creating subscription: {e}")
             return None
         finally:
             cursor.close()
@@ -318,11 +317,11 @@ class Database:
     # ─────────────────────────────────────────
 
     def get_or_create_referral_code(self, user_id):
-        """User ka referral code nikalo ya banao"""
+        """Get existing referral code or generate a new one"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
-            # Check karo code already hai
+            # Check if code already exists
             cursor.execute(
                 "SELECT referral_code FROM users WHERE user_id = %s",
                 (user_id,)
@@ -331,7 +330,7 @@ class Database:
             if row and row[0]:
                 return row[0]
 
-            # Naya code banao
+            # Generate new referral code
             import random
             import string
             user = self.get_user(user_id)
@@ -347,14 +346,14 @@ class Database:
             return code
         except Exception as e:
             conn.rollback()
-            print(f"❌ Error with referral code: {e}")
+            print(f"Error with referral code: {e}")
             return None
         finally:
             cursor.close()
             self._put_conn(conn)
 
     def get_user_by_referral_code(self, code):
-        """Referral code se user nikalo"""
+        """Find user by referral code"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -365,18 +364,18 @@ class Database:
             row = cursor.fetchone()
             return row[0] if row else None
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(f"Error: {e}")
             return None
         finally:
             cursor.close()
             self._put_conn(conn)
 
     def add_referral(self, referrer_id, referred_id):
-        """Referral record add karo aur dono ko reward do"""
+        """Record a referral and grant 7 days free premium to both users"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
-            # Check karo already referred nahi hai
+            # Check if already referred
             cursor.execute(
                 "SELECT referral_id FROM referrals WHERE referred_id = %s",
                 (referred_id,)
@@ -384,13 +383,13 @@ class Database:
             if cursor.fetchone():
                 return False  # Already referred
 
-            # Referral save karo
+            # Save referral record
             cursor.execute("""
                 INSERT INTO referrals (referrer_id, referred_id, reward_given)
                 VALUES (%s, %s, true)
             """, (referrer_id, referred_id))
 
-            # Dono ko 7 days free premium do
+            # Grant 7 days free premium to both users
             from datetime import datetime, timedelta
             end_date = datetime.now() + timedelta(days=7)
 
@@ -402,18 +401,18 @@ class Database:
                 """, (uid, end_date))
 
             conn.commit()
-            print(f"✅ Referral added! {referrer_id} referred {referred_id}")
+            print(f"Referral added! {referrer_id} referred {referred_id}")
             return True
         except Exception as e:
             conn.rollback()
-            print(f"❌ Error adding referral: {e}")
+            print(f"Error adding referral: {e}")
             return False
         finally:
             cursor.close()
             self._put_conn(conn)
 
     def get_referral_count(self, user_id):
-        """User ne kitne log refer kiye"""
+        """Get total number of successful referrals by a user"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -423,7 +422,7 @@ class Database:
             )
             return cursor.fetchone()[0]
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(f"Error: {e}")
             return 0
         finally:
             cursor.close()
@@ -434,7 +433,7 @@ class Database:
     # ─────────────────────────────────────────
 
     def save_alert_history(self, config_id, triggered_value):
-        """Alert trigger hua to history mein save karo"""
+        """Save a record when an alert is triggered"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -445,13 +444,13 @@ class Database:
             conn.commit()
         except Exception as e:
             conn.rollback()
-            print(f"❌ Error saving alert history: {e}")
+            print(f"Error saving alert history: {e}")
         finally:
             cursor.close()
             self._put_conn(conn)
 
     def get_alert_history(self, user_id, limit=10):
-        """User ki alert history nikalo"""
+        """Get alert trigger history for a user"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -477,7 +476,7 @@ class Database:
                 })
             return history
         except Exception as e:
-            print(f"❌ Error fetching alert history: {e}")
+            print(f"Error fetching alert history: {e}")
             return []
         finally:
             cursor.close()
@@ -488,7 +487,7 @@ class Database:
     # ─────────────────────────────────────────
 
     def get_admin_stats(self):
-        """Admin ke liye bot statistics"""
+        """Get bot statistics for admin dashboard"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -509,7 +508,7 @@ class Database:
             # Free users
             stats['free_users'] = stats['total_users'] - stats['premium_users']
 
-            # Total AWS accounts
+            # Total active AWS accounts
             cursor.execute("SELECT COUNT(*) FROM aws_accounts WHERE is_active = true")
             stats['total_accounts'] = cursor.fetchone()[0]
 
@@ -531,7 +530,7 @@ class Database:
             """)
             stats['new_this_week'] = cursor.fetchone()[0]
 
-            # Revenue this month (premium subscriptions)
+            # Revenue this month
             cursor.execute("""
                 SELECT COUNT(*), SUM(
                     CASE plan_name
@@ -563,14 +562,14 @@ class Database:
             return stats
 
         except Exception as e:
-            print(f"❌ Error fetching admin stats: {e}")
+            print(f"Error fetching admin stats: {e}")
             return {}
         finally:
             cursor.close()
             self._put_conn(conn)
 
     def get_all_users(self):
-        """Saare users ki list"""
+        """Get list of recent users (last 20)"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -596,29 +595,26 @@ class Database:
                 })
             return users
         except Exception as e:
-            print(f"❌ Error fetching users: {e}")
+            print(f"Error fetching users: {e}")
             return []
         finally:
             cursor.close()
             self._put_conn(conn)
 
     def close(self):
-        """Sab connections band karo"""
+        """Close all database connections"""
         self.pool.closeall()
-        print("✅ Database connections closed")
+        print("Database connections closed")
 
 
-# Test
+# Run this file directly to test database connection
 if __name__ == '__main__':
     print("Testing Database...\n")
     db = Database()
 
-    # User add karo
     db.add_user(123456789, "test_user", "Test User")
-
-    # User nikalo
     user = db.get_user(123456789)
     print(f"User found: {user}")
 
-    print("\n✅ Database working perfectly!")
+    print("\nDatabase working perfectly!")
     db.close()

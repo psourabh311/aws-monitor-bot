@@ -208,12 +208,35 @@ USER_CHART_HTML = """
         <div class="controls">
             <button onclick="loadChart(7)" id="btn7">7 Days</button>
             <button onclick="loadChart(30)" id="btn30" class="active">30 Days</button>
-            <button onclick="loadChart(90)" id="btn90">90 Days</button>
-            <button onclick="loadChart(180)" id="btn180">6 Months</button>
+            <button onclick="showPremiumPopup(90)" id="btn90">90 Days ⭐</button>
+            <button onclick="showPremiumPopup(180)" id="btn180">6 Months ⭐</button>
             <button onclick="resetZoom()">Reset Zoom</button>
         </div>
         <canvas id="costChart" height="300"></canvas>
         <p class="tip">Pinch to zoom • Drag to pan • Double-tap to reset</p>
+    </div>
+
+    <!-- Premium Popup -->
+    <div id="premiumPopup" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+         background:rgba(0,0,0,0.7); z-index:1000; justify-content:center; align-items:center;">
+        <div style="background:#1a1a2e; border:1px solid #00d4ff; border-radius:16px; padding:30px;
+                    max-width:360px; width:90%; text-align:center;">
+            <div style="font-size:32px; margin-bottom:12px;">⭐</div>
+            <h3 style="color:#00d4ff; margin-bottom:10px;">Premium Feature</h3>
+            <p style="color:#aaa; font-size:13px; margin-bottom:20px;">
+                90-day and 6-month charts are available on the Premium plan.
+                Unlock deeper insights into your AWS cost trends.
+            </p>
+            <a href="https://t.me/aws_monitor_telegram_bot" target="_blank"
+               style="display:block; background:#00d4ff; color:#000; padding:12px 20px;
+                      border-radius:8px; text-decoration:none; font-weight:bold; margin-bottom:12px;">
+                Upgrade to Premium
+            </a>
+            <button onclick="closePremiumPopup()"
+                    style="background:transparent; color:#666; border:none; cursor:pointer; font-size:13px;">
+                Maybe later
+            </button>
+        </div>
     </div>
     <script>
         let chart = null;
@@ -291,6 +314,14 @@ USER_CHART_HTML = """
 
         function resetZoom() {
             if (chart) chart.resetZoom();
+        }
+
+        function showPremiumPopup(days) {
+            document.getElementById('premiumPopup').style.display = 'flex';
+        }
+
+        function closePremiumPopup() {
+            document.getElementById('premiumPopup').style.display = 'none';
         }
 
         loadChart(30);

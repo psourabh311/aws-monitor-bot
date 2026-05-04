@@ -1,5 +1,5 @@
 import matplotlib
-matplotlib.use('Agg')  # GUI nahi chahiye - server pe chalega
+matplotlib.use('Agg')  # Use non-interactive backend for server environments
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
@@ -7,13 +7,13 @@ from io import BytesIO
 
 
 class ChartGenerator:
-    """AWS cost charts generate karta hai"""
+    """Generates AWS cost trend charts as images"""
 
     def generate_cost_chart(self, cost_data, title, period_label):
         """
-        Cost trend chart banao.
+        Generate a cost trend line chart.
         cost_data: list of {'date': datetime, 'cost': float}
-        Returns: BytesIO (image bytes)
+        Returns: BytesIO image buffer
         """
         if not cost_data:
             return None
@@ -21,19 +21,18 @@ class ChartGenerator:
         dates = [item['date'] for item in cost_data]
         costs = [item['cost'] for item in cost_data]
 
-        # Figure setup
         fig, ax = plt.subplots(figsize=(10, 5))
         fig.patch.set_facecolor('#1a1a2e')
         ax.set_facecolor('#16213e')
 
-        # Line chart
+        # Plot line with markers
         ax.plot(dates, costs, color='#00d4ff', linewidth=2.5, marker='o',
                 markersize=5, markerfacecolor='#00d4ff')
 
-        # Area fill
+        # Fill area under the line
         ax.fill_between(dates, costs, alpha=0.15, color='#00d4ff')
 
-        # Styling
+        # Chart styling
         ax.set_title(title, color='white', fontsize=14, fontweight='bold', pad=15)
         ax.set_xlabel('Date', color='#aaaaaa', fontsize=10)
         ax.set_ylabel('Cost (USD)', color='#aaaaaa', fontsize=10)
@@ -46,7 +45,7 @@ class ChartGenerator:
 
         ax.grid(True, alpha=0.15, color='#ffffff')
 
-        # Y axis auto-scale with nice padding
+        # Auto-scale Y axis based on data range
         if costs:
             max_cost = max(costs)
             min_cost = min(costs)
@@ -55,12 +54,12 @@ class ChartGenerator:
                 max(0, min_cost - padding),
                 max_cost + padding
             )
-            # Y axis dollar format
+            # Format Y axis as dollar amounts
             ax.yaxis.set_major_formatter(
                 plt.FuncFormatter(lambda x, _: f'${x:.2f}')
             )
 
-        # X axis format
+        # Format X axis based on date range
         if len(dates) <= 7:
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
         elif len(dates) <= 30:
@@ -72,7 +71,7 @@ class ChartGenerator:
 
         plt.xticks(rotation=45)
 
-        # Total cost annotation
+        # Show total cost in top-right corner
         total = sum(costs)
         ax.annotate(
             f'Total: ${total:.2f}',
@@ -84,7 +83,7 @@ class ChartGenerator:
             fontweight='bold'
         )
 
-        # Period label
+        # Show period label in top-left corner
         ax.annotate(
             period_label,
             xy=(0.02, 0.95),
@@ -96,7 +95,7 @@ class ChartGenerator:
 
         plt.tight_layout()
 
-        # Image bytes mein save karo
+        # Save chart to memory buffer
         buf = BytesIO()
         plt.savefig(buf, format='png', dpi=150, bbox_inches='tight',
                     facecolor='#1a1a2e')
@@ -107,12 +106,11 @@ class ChartGenerator:
 
     def prepare_cost_data(self, monitor, days):
         """
-        AWS Cost Explorer se data fetch karo aur format karo.
-        days: 7, 30, 90, 180
+        Fetch daily cost data from AWS Cost Explorer.
+        days: number of days to look back (7, 30, 90, 180)
+        Returns: list of {'date': datetime, 'cost': float}
         """
         try:
-            from datetime import datetime, timedelta
-
             end_date = datetime.now()
             start_date = end_date - timedelta(days=days)
 
@@ -137,19 +135,17 @@ class ChartGenerator:
             return cost_data
 
         except Exception as e:
-            print(f"❌ Error fetching chart data: {e}")
+            print(f"Error fetching chart data: {e}")
             return []
 
 
-# Test
+# Run this file directly to generate a test chart
 if __name__ == '__main__':
-    from datetime import datetime, timedelta
-
+    import random
     gen = ChartGenerator()
 
-    # Fake test data - realistic costs
+    # Generate realistic test data
     test_data = []
-    import random
     base = 45.0
     for i in range(30):
         variation = random.uniform(-5, 8)
@@ -164,4 +160,4 @@ if __name__ == '__main__':
     if chart:
         with open('test_chart.png', 'wb') as f:
             f.write(chart.read())
-        print("Chart saved: test_chart.png")
+        print("Test chart saved: test_chart.png")

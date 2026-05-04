@@ -2,43 +2,43 @@ from cryptography.fernet import Fernet
 import os
 from dotenv import load_dotenv
 
-# .env file load karo
+# Load environment variables from .env file
 load_dotenv()
 
 class SecurityManager:
-    """AWS credentials encrypt aur decrypt karta hai"""
+    """Handles encryption and decryption of AWS credentials"""
 
     def __init__(self):
-        # .env se encryption key lo
+        # Load encryption key from environment variable
         key = os.getenv('ENCRYPTION_KEY')
 
         if not key:
-            raise ValueError("ENCRYPTION_KEY .env file mein nahi hai!")
+            raise ValueError("ENCRYPTION_KEY is missing from .env file!")
 
-        # Fernet object banao - ye encrypt/decrypt karega
+        # Initialize Fernet cipher for encryption/decryption
         self.cipher = Fernet(key.encode())
-        print("✅ SecurityManager ready!")
+        print("SecurityManager ready!")
 
     def encrypt(self, plain_text):
-        """Plain text ko encrypted text mein badlo"""
+        """Encrypt plain text and return encrypted string"""
         if not plain_text:
             return None
-        # String → bytes → encrypt → string
+        # String -> bytes -> encrypt -> string
         return self.cipher.encrypt(plain_text.encode()).decode()
 
     def decrypt(self, encrypted_text):
-        """Encrypted text ko wapas plain text mein badlo"""
+        """Decrypt encrypted text and return plain string"""
         if not encrypted_text:
             return None
         try:
-            # String → bytes → decrypt → string
+            # String -> bytes -> decrypt -> string
             return self.cipher.decrypt(encrypted_text.encode()).decode()
         except Exception as e:
-            print(f"❌ Decryption failed: {e}")
+            print(f"Decryption failed: {e}")
             return None
 
 
-# Test - seedha ye file run karo to check hoga
+# Run this file directly to test encryption
 if __name__ == '__main__':
     sm = SecurityManager()
 
@@ -52,6 +52,6 @@ if __name__ == '__main__':
     print(f"Decrypted: {decrypted}")
 
     if original == decrypted:
-        print("\n✅ Encryption working perfectly!")
+        print("\nEncryption working perfectly!")
     else:
-        print("\n❌ Something wrong!")
+        print("\nSomething went wrong!")

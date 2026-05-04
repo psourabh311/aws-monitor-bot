@@ -4,9 +4,10 @@ from botocore.exceptions import ClientError, NoCredentialsError
 
 
 class AWSMonitor:
-    """AWS se data fetch karta hai - EC2, CloudWatch, Cost Explorer, RDS, S3"""
+    """Fetches data from AWS services: EC2, CloudWatch, Cost Explorer, RDS, S3"""
 
     def __init__(self, access_key, secret_key, region='ap-south-1'):
+        """Initialize all AWS service clients"""
         try:
             self.ec2 = boto3.client('ec2', aws_access_key_id=access_key,
                                     aws_secret_access_key=secret_key, region_name=region)
@@ -14,7 +15,7 @@ class AWSMonitor:
             self.cloudwatch = boto3.client('cloudwatch', aws_access_key_id=access_key,
                                            aws_secret_access_key=secret_key, region_name=region)
 
-            # Cost Explorer sirf us-east-1 mein kaam karta hai
+            # Cost Explorer only works in us-east-1 (AWS requirement)
             self.cost_explorer = boto3.client('ce', aws_access_key_id=access_key,
                                               aws_secret_access_key=secret_key, region_name='us-east-1')
 
@@ -25,32 +26,32 @@ class AWSMonitor:
                                    aws_secret_access_key=secret_key, region_name=region)
 
             self.region = region
-            print(f"✅ AWSMonitor ready! Region: {region}")
+            print(f"AWSMonitor ready! Region: {region}")
 
         except Exception as e:
-            print(f"❌ AWS client error: {e}")
+            print(f"AWS client error: {e}")
             raise
 
     def test_connection(self):
-        """AWS credentials test karo"""
+        """Test if AWS credentials are valid by calling describe_regions"""
         try:
             self.ec2.describe_regions(RegionNames=[self.region])
             return True
         except ClientError as e:
             error_code = e.response['Error']['Code']
             if error_code == 'AuthFailure':
-                print("❌ AWS credentials galat hain!")
+                print("AWS credentials are invalid!")
             elif error_code == 'UnauthorizedOperation':
-                print("❌ IAM permissions missing hain!")
+                print("IAM permissions are missing!")
             else:
-                print(f"❌ AWS error: {error_code}")
+                print(f"AWS error: {error_code}")
             return False
         except Exception as e:
-            print(f"❌ Connection test failed: {e}")
+            print(f"Connection test failed: {e}")
             return False
 
     def get_ec2_instances(self):
-        """Running EC2 instances ki list"""
+        """Get list of all running EC2 instances with name, type, and state"""
         try:
             response = self.ec2.describe_instances(
                 Filters=[{'Name': 'instance-state-name', 'Values': ['running']}]
@@ -58,6 +59,7 @@ class AWSMonitor:
             instances = []
             for reservation in response['Reservations']:
                 for instance in reservation['Instances']:
+                    # Instance name is stored in Tags
                     name = 'No Name'
                     if 'Tags' in instance:
                         for tag in instance['Tags']:
@@ -72,14 +74,14 @@ class AWSMonitor:
                     })
             return instances
         except ClientError as e:
-            print(f"❌ EC2 error: {e.response['Error']['Code']}")
+            print(f"EC2 error: {e.response['Error']['Code']}")
             return []
         except Exception as e:
-            print(f"❌ Error fetching instances: {e}")
+            print(f"Error fetching instances: {e}")
             return []
 
     def get_cpu_utilization(self, instance_id, hours=1):
-        """EC2 instance ka CPU usage"""
+        """Get average CPU utilization for an EC2 instance over the last N hours"""
         try:
             end_time = datetime.utcnow()
             start_time = end_time - timedelta(hours=hours)
@@ -97,11 +99,11 @@ class AWSMonitor:
                 return round(datapoints[0]['Average'], 2)
             return 0.0
         except Exception as e:
-            print(f"❌ Error fetching CPU: {e}")
+            print(f"Error fetching CPU: {e}")
             return None
 
     def get_today_cost(self):
-        """Aaj ka AWS spending"""
+        """Get today's total AWS spending in USD"""
         try:
             today = datetime.now().strftime('%Y-%m-%d')
             tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
@@ -117,16 +119,16 @@ class AWSMonitor:
         except ClientError as e:
             error_code = e.response['Error']['Code']
             if error_code == 'AccessDeniedException':
-                print("❌ Cost Explorer access nahi hai!")
+                print("Cost Explorer access denied! Check IAM permissions.")
             else:
-                print(f"❌ Cost Explorer error: {error_code}")
+                print(f"Cost Explorer error: {error_code}")
             return None
         except Exception as e:
-            print(f"❌ Error fetching today cost: {e}")
+            print(f"Error fetching today cost: {e}")
             return None
 
     def get_month_cost(self):
-        """Is mahine ka total cost"""
+        """Get total AWS spending for the current month"""
         try:
             first_day = datetime.now().replace(day=1).strftime('%Y-%m-%d')
             tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
@@ -140,14 +142,14 @@ class AWSMonitor:
                 return round(float(amount), 2)
             return 0.0
         except ClientError as e:
-            print(f"❌ Cost Explorer error: {e.response['Error']['Code']}")
+            print(f"Cost Explorer error: {e.response['Error']['Code']}")
             return None
         except Exception as e:
-            print(f"❌ Error fetching month cost: {e}")
+            print(f"Error fetching month cost: {e}")
             return None
 
     def get_yesterday_cost(self):
-        """Kal ka cost - anomaly detection ke liye"""
+        """Get yesterday's total cost (used for anomaly detection)"""
         try:
             yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
             today = datetime.now().strftime('%Y-%m-%d')
@@ -161,11 +163,11 @@ class AWSMonitor:
                 return round(float(amount), 2)
             return 0.0
         except Exception as e:
-            print(f"❌ Error fetching yesterday cost: {e}")
+            print(f"Error fetching yesterday cost: {e}")
             return None
 
     def get_weekly_costs(self):
-        """Is hafte aur pichle hafte ka cost"""
+        """Get this week's and last week's costs for comparison"""
         try:
             today = datetime.now()
             this_week_start = (today - timedelta(days=7)).strftime('%Y-%m-%d')
@@ -187,11 +189,11 @@ class AWSMonitor:
 
             return round(this_week, 2), round(last_week, 2)
         except Exception as e:
-            print(f"❌ Error fetching weekly costs: {e}")
+            print(f"Error fetching weekly costs: {e}")
             return None, None
 
     def get_rds_instances(self):
-        """RDS database instances ki list"""
+        """Get list of all RDS database instances"""
         try:
             response = self.rds.describe_db_instances()
             instances = []
@@ -206,14 +208,14 @@ class AWSMonitor:
                 })
             return instances
         except ClientError as e:
-            print(f"❌ RDS error: {e.response['Error']['Code']}")
+            print(f"RDS error: {e.response['Error']['Code']}")
             return []
         except Exception as e:
-            print(f"❌ Error fetching RDS instances: {e}")
+            print(f"Error fetching RDS instances: {e}")
             return []
 
     def get_s3_buckets(self):
-        """S3 buckets ki list with size aur file count"""
+        """Get list of all S3 buckets with size and object count from CloudWatch"""
         try:
             response = self.s3.list_buckets()
             buckets = []
@@ -227,6 +229,7 @@ class AWSMonitor:
                     end_time = datetime.utcnow()
                     start_time = end_time - timedelta(days=2)
 
+                    # Get bucket size from CloudWatch
                     size_response = self.cloudwatch.get_metric_statistics(
                         Namespace='AWS/S3',
                         MetricName='BucketSizeBytes',
@@ -240,6 +243,7 @@ class AWSMonitor:
                     if size_response['Datapoints']:
                         size_bytes = size_response['Datapoints'][-1]['Average']
 
+                    # Get object count from CloudWatch
                     count_response = self.cloudwatch.get_metric_statistics(
                         Namespace='AWS/S3',
                         MetricName='NumberOfObjects',
@@ -265,12 +269,12 @@ class AWSMonitor:
 
             return buckets
         except ClientError as e:
-            print(f"❌ S3 error: {e.response['Error']['Code']}")
+            print(f"S3 error: {e.response['Error']['Code']}")
             return []
         except Exception as e:
-            print(f"❌ Error fetching S3 buckets: {e}")
+            print(f"Error fetching S3 buckets: {e}")
             return []
 
 
 if __name__ == '__main__':
-    print("AWS Monitor ready!")
+    print("AWSMonitor ready! Provide credentials to test.")
