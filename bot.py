@@ -1267,22 +1267,20 @@ async def myplan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/support command"""
+    """/support command - users can contact support"""
     user = update.effective_user
     admin_id = int(os.getenv('ADMIN_ID', '0'))
 
     if context.args:
-        # User ne message diya - admin ko forward karo
         support_msg = ' '.join(context.args)
-
-        # Admin ko notify karo
         try:
             await context.bot.send_message(
                 chat_id=admin_id,
                 text=f"Support Request\n\n"
                      f"From: {user.first_name} (@{user.username})\n"
                      f"ID: {user.id}\n\n"
-                     f"Message: {support_msg}"
+                     f"Message: {support_msg}\n\n"
+                     f"Reply with: /reply {user.id} <your message>"
             )
             await update.message.reply_text(
                 "Your message has been sent to support.\n\n"
@@ -1301,6 +1299,39 @@ async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "We typically respond within 24 hours.",
             reply_markup=main_menu_keyboard()
         )
+
+
+async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/reply <user_id> <message> - Admin only: reply to a user's support request"""
+    admin_id = int(os.getenv('ADMIN_ID', '0'))
+
+    if update.effective_user.id != admin_id:
+        await update.message.reply_text("Access Denied.")
+        return
+
+    if len(context.args) < 2:
+        await update.message.reply_text(
+            "Usage: /reply <user_id> <message>\n\n"
+            "Example:\n"
+            "/reply 5607238013 Hi! How can I help you?"
+        )
+        return
+
+    try:
+        target_user_id = int(context.args[0])
+        reply_message = ' '.join(context.args[1:])
+    except ValueError:
+        await update.message.reply_text("Invalid user ID! Must be a number.")
+        return
+
+    try:
+        await context.bot.send_message(
+            chat_id=target_user_id,
+            text=f"Support Reply\n\n{reply_message}\n\nFor more help: /support <message>"
+        )
+        await update.message.reply_text(f"Reply sent to user {target_user_id}!")
+    except Exception as e:
+        await update.message.reply_text(f"Failed to send reply: {str(e)}")
 
 
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1488,6 +1519,7 @@ def main():
     app.add_handler(CommandHandler("admin", admin))
     app.add_handler(CommandHandler("myplan", myplan_command))
     app.add_handler(CommandHandler("support", support_command))
+    app.add_handler(CommandHandler("reply", reply_command))
     app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_alert_value))
