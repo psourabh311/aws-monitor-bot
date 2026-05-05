@@ -1,6 +1,13 @@
 # ☁️ AWS Monitor Bot
 
+[![Live Bot](https://img.shields.io/badge/Telegram-AWS%20Monitor%20Bot-blue?logo=telegram)](https://t.me/aws_monitor_telegram_bot)
+[![GitHub](https://img.shields.io/badge/GitHub-psourabh311-black?logo=github)](https://github.com/psourabh311/aws-monitor-bot)
+
 A production-ready Telegram bot that monitors your AWS infrastructure in real-time, sends automated alerts, and provides detailed reports.
+
+## Try it Live
+
+**Bot:** [t.me/aws_monitor_telegram_bot](https://t.me/aws_monitor_telegram_bot)
 
 ## Features
 
