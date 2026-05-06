@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS Monitor Bot</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0f0f1a; color: #ffffff; font-family: 'Segoe UI', sans-serif; }
+
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .badge {
+            background: #00d4ff22;
+            border: 1px solid #00d4ff;
+            color: #00d4ff;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+
+        h1 {
+            font-size: 48px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, #ffffff, #00d4ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 18px;
+            color: #aaaaaa;
+            max-width: 600px;
+            line-height: 1.6;
+            margin-bottom: 40px;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 60px;
+        }
+
+        .btn-primary {
+            background: #00d4ff;
+            color: #000;
+            padding: 14px 28px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 16px;
+            transition: opacity 0.2s;
+        }
+
+        .btn-primary:hover { opacity: 0.85; }
+
+        .btn-secondary {
+            background: transparent;
+            color: #ffffff;
+            padding: 14px 28px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+            border: 1px solid #444;
+            transition: border-color 0.2s;
+        }
+
+        .btn-secondary:hover { border-color: #00d4ff; }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            max-width: 1000px;
+            width: 100%;
+            margin-bottom: 60px;
+        }
+
+        .feature-card {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 12px;
+            padding: 24px;
+            text-align: left;
+        }
+
+        .feature-icon { font-size: 28px; margin-bottom: 12px; }
+        .feature-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+        .feature-desc { font-size: 14px; color: #888; line-height: 1.5; }
+
+        .pricing {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-width: 700px;
+            width: 100%;
+            margin-bottom: 60px;
+        }
+
+        .plan-card {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 12px;
+            padding: 28px;
+            text-align: center;
+        }
+
+        .plan-card.premium { border-color: #00d4ff; }
+        .plan-name { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+        .plan-price { font-size: 36px; font-weight: 800; color: #00d4ff; margin-bottom: 4px; }
+        .plan-period { font-size: 13px; color: #666; margin-bottom: 20px; }
+        .plan-features { list-style: none; text-align: left; }
+        .plan-features li { font-size: 14px; color: #aaa; padding: 4px 0; }
+        .plan-features li::before { content: "✓ "; color: #00d4ff; }
+
+        .footer {
+            padding: 30px;
+            text-align: center;
+            color: #444;
+            font-size: 13px;
+            border-top: 1px solid #222;
+            width: 100%;
+        }
+
+        .footer a { color: #666; text-decoration: none; }
+        .footer a:hover { color: #00d4ff; }
+
+        @media (max-width: 600px) {
+            h1 { font-size: 32px; }
+            .pricing { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <div class="badge">🚀 Now Live — Free to Use</div>
+
+        <h1>AWS Monitor Bot</h1>
+
+        <p class="subtitle">
+            Monitor your AWS infrastructure directly from Telegram.
+            Get daily cost summaries, instant alerts, and detailed reports —
+            without opening the AWS Console.
+        </p>
+
+        <div class="cta-buttons">
+            <a href="https://t.me/aws_monitor_telegram_bot" class="btn-primary">
+                Start Monitoring Free
+            </a>
+            <a href="https://github.com/psourabh311/aws-monitor-bot" class="btn-secondary">
+                View on GitHub
+            </a>
+        </div>
+
+        <div class="features">
+            <div class="feature-card">
+                <div class="feature-icon">🖥️</div>
+                <div class="feature-title">EC2 Monitoring</div>
+                <div class="feature-desc">Track running instances, CPU utilization, and instance health in real-time.</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">💰</div>
+                <div class="feature-title">Cost Tracking</div>
+                <div class="feature-desc">Daily, weekly, and monthly AWS spending with anomaly detection.</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔔</div>
+                <div class="feature-title">Smart Alerts</div>
+                <div class="feature-desc">Set custom thresholds. Get notified when costs or CPU cross your limits.</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🗄️</div>
+                <div class="feature-title">RDS & S3</div>
+                <div class="feature-desc">Monitor database instances and S3 storage usage from one place.</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📊</div>
+                <div class="feature-title">Interactive Charts</div>
+                <div class="feature-desc">Zoom and pan through cost trends. View 7, 30, 90, or 180 day history.</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📄</div>
+                <div class="feature-title">PDF Reports</div>
+                <div class="feature-desc">Download detailed monthly reports with all your AWS usage data.</div>
+            </div>
+        </div>
+
+        <h2 style="font-size: 28px; margin-bottom: 30px;">Simple Pricing</h2>
+
+        <div class="pricing">
+            <div class="plan-card">
+                <div class="plan-name">Free</div>
+                <div class="plan-price">₹0</div>
+                <div class="plan-period">forever</div>
+                <ul class="plan-features">
+                    <li>1 AWS account</li>
+                    <li>5 alerts</li>
+                    <li>Daily summary</li>
+                    <li>7 & 30 day charts</li>
+                    <li>6 hour check interval</li>
+                </ul>
+            </div>
+            <div class="plan-card premium">
+                <div class="plan-name">Premium</div>
+                <div class="plan-price">₹499</div>
+                <div class="plan-period">per month</div>
+                <ul class="plan-features">
+                    <li>5 AWS accounts</li>
+                    <li>50 alerts</li>
+                    <li>30 min check interval</li>
+                    <li>90 & 180 day charts</li>
+                    <li>Weekly reports</li>
+                    <li>Anomaly detection</li>
+                    <li>PDF reports</li>
+                </ul>
+            </div>
+        </div>
+
+        <a href="https://t.me/aws_monitor_telegram_bot" class="btn-primary" style="font-size: 18px; padding: 16px 36px;">
+            Get Started Free on Telegram
+        </a>
+    </div>
+
+    <footer class="footer">
+        <p>
+            AWS Monitor Bot &nbsp;|&nbsp;
+            <a href="https://t.me/aws_monitor_telegram_bot">Telegram</a> &nbsp;|&nbsp;
+            <a href="https://github.com/psourabh311/aws-monitor-bot">GitHub</a> &nbsp;|&nbsp;
+            <a href="mailto:support@awsmonitorbot.com">Contact</a>
+        </p>
+        <p style="margin-top: 8px;">© 2026 AWS Monitor Bot. All rights reserved.</p>
+    </footer>
+</body>
+</html>
