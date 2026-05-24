@@ -67,6 +67,14 @@ class AlertScheduler:
             name='Renewal Reminder'
         )
 
+        # Job 6: Check AWS credits balance daily at 10 AM
+        self.scheduler.add_job(
+            self.check_credits_all,
+            CronTrigger(hour=10, minute=0),
+            id='credits_checker',
+            name='Credits Balance Check'
+        )
+
         self.scheduler.start()
         print("Scheduler started!")
         print("   - Alerts checked every 1 minute")
@@ -79,6 +87,64 @@ class AlertScheduler:
         """Stop the scheduler"""
         self.scheduler.shutdown()
         print("Scheduler stopped.")
+
+    # ─────────────────────────────────────────
+    # CREDITS CHECKER
+    # ─────────────────────────────────────────
+
+    async def check_credits_all(self):
+        """Check AWS credits balance for all users"""
+        print(f"Checking AWS credits... {datetime.now().strftime('%H:%M:%S')}")
+
+        conn = self.db._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT user_id, first_name FROM users")
+            users = cursor.fetchall()
+        finally:
+            cursor.close()
+            self.db._put_conn(conn)
+
+        for user in users:
+            try:
+                await self.check_credits(user[0], user[1])
+            except Exception as e:
+                print(f"Credits check failed for {user[0]}: {e}")
+
+    async def check_credits(self, user_id, first_name):
+        """Check if user's AWS credits are exhausted and send alert"""
+        accounts = self.db.get_aws_accounts(user_id)
+        if not accounts:
+            return
+
+        account = accounts[0]
+        creds = self.db.get_aws_credentials(account['account_id'])
+        if not creds:
+            return
+
+        try:
+            monitor = AWSMonitor(
+                access_key=creds['access_key'],
+                secret_key=creds['secret_key'],
+                region=creds['region']
+            )
+
+            credits_info = monitor.get_credits_info()
+
+            # Alert if credits were active but now exhausted
+            if not credits_info.get('has_credits') and credits_info.get('actual_cost_month', 0) > 0:
+                message = f"AWS Credits Exhausted!\n\n"
+                message += f"Your AWS credits have been fully used.\n"
+                message += f"You will now be charged for AWS usage.\n\n"
+                message += f"This Month's Usage: ${credits_info.get('actual_cost_month', 0):.2f}\n\n"
+                message += f"Set up a cost alert to monitor spending:\n"
+                message += f"Use Set Alert in the main menu."
+
+                await self.bot.send_message(chat_id=user_id, text=message)
+                print(f"Credits exhausted alert sent to {first_name}")
+
+        except Exception as e:
+            print(f"Error checking credits for {user_id}: {e}")
 
     # ─────────────────────────────────────────
     # RENEWAL REMINDER
@@ -326,17 +392,27 @@ class AlertScheduler:
             today_cost = monitor.get_today_cost()
             month_cost = monitor.get_month_cost()
             alerts = self.db.get_user_alerts(user_id)
+            credits_info = monitor.get_credits_info()
 
             message = f"Good Morning {first_name}!\n\n"
             message += f"Daily AWS Summary\n"
             message += f"━━━━━━━━━━━━━━━━━━\n"
             message += f"EC2 Instances: {len(instances)} running\n"
 
-            if today_cost is not None:
-                message += f"Today's Cost: ${today_cost:.2f}\n"
-
-            if month_cost is not None:
-                message += f"Month so far: ${month_cost:.2f}\n"
+            if credits_info.get('has_credits'):
+                # Show credits breakdown
+                message += f"\nActual Usage Today: ${credits_info['actual_cost_today']:.2f}\n"
+                message += f"Credits Applied Today: -${credits_info['credits_used_today']:.2f}\n"
+                message += f"Billed Today: ${credits_info['billed_today']:.2f}\n"
+                message += f"\nActual Usage This Month: ${credits_info['actual_cost_month']:.2f}\n"
+                message += f"Credits Applied This Month: -${credits_info['credits_used_month']:.2f}\n"
+                message += f"Billed This Month: ${credits_info['billed_month']:.2f}\n"
+                message += f"\n💳 AWS Credits Active\n"
+            else:
+                if today_cost is not None:
+                    message += f"Today's Cost: ${today_cost:.2f}\n"
+                if month_cost is not None:
+                    message += f"Month so far: ${month_cost:.2f}\n"
 
             message += f"Active Alerts: {len(alerts)}\n"
             message += f"━━━━━━━━━━━━━━━━━━\n"

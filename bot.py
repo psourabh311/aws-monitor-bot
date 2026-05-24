@@ -140,12 +140,25 @@ async def get_costs_message(user_id, account_id=None):
 
     try:
         monitor = AWSMonitor(creds['access_key'], creds['secret_key'], creds['region'])
-        today_cost = monitor.get_today_cost()
-        month_cost = monitor.get_month_cost()
+        credits_info = monitor.get_credits_info()
 
         message = f"Cost Report - {account['account_name']}\n\n"
-        message += f"Today: ${today_cost:.2f}\n" if today_cost is not None else "Today: N/A\n"
-        message += f"This Month: ${month_cost:.2f}\n" if month_cost is not None else "This Month: N/A\n"
+
+        if credits_info.get('has_credits'):
+            message += f"AWS Credits Active\n\n"
+            message += f"Today:\n"
+            message += f"  Actual Usage: ${credits_info['actual_cost_today']:.2f}\n"
+            message += f"  Credits Applied: -${credits_info['credits_used_today']:.2f}\n"
+            message += f"  Billed: ${credits_info['billed_today']:.2f}\n\n"
+            message += f"This Month:\n"
+            message += f"  Actual Usage: ${credits_info['actual_cost_month']:.2f}\n"
+            message += f"  Credits Applied: -${credits_info['credits_used_month']:.2f}\n"
+            message += f"  Billed: ${credits_info['billed_month']:.2f}\n"
+        else:
+            today_cost = monitor.get_today_cost()
+            month_cost = monitor.get_month_cost()
+            message += f"Today: ${today_cost:.2f}\n" if today_cost is not None else "Today: N/A\n"
+            message += f"This Month: ${month_cost:.2f}\n" if month_cost is not None else "This Month: N/A\n"
 
         keyboard_buttons = [
             [

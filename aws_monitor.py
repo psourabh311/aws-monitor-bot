@@ -102,6 +102,81 @@ class AWSMonitor:
             print(f"Error fetching CPU: {e}")
             return None
 
+    def get_credits_info(self):
+        """
+        Fetch AWS credits usage and remaining balance.
+        Returns dict with credits_used_today, credits_used_month, actual_cost_month
+        """
+        try:
+            from datetime import datetime, timedelta
+            today = datetime.now().strftime('%Y-%m-%d')
+            tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+            first_day = datetime.now().replace(day=1).strftime('%Y-%m-%d')
+
+            # Credits used this month (negative value = credits applied)
+            month_credits_resp = self.cost_explorer.get_cost_and_usage(
+                TimePeriod={'Start': first_day, 'End': tomorrow},
+                Granularity='MONTHLY',
+                Metrics=['UnblendedCost'],
+                Filter={'Dimensions': {'Key': 'RECORD_TYPE', 'Values': ['Credit']}}
+            )
+
+            # Credits used today
+            today_credits_resp = self.cost_explorer.get_cost_and_usage(
+                TimePeriod={'Start': today, 'End': tomorrow},
+                Granularity='DAILY',
+                Metrics=['UnblendedCost'],
+                Filter={'Dimensions': {'Key': 'RECORD_TYPE', 'Values': ['Credit']}}
+            )
+
+            # Actual usage cost this month (before credits)
+            actual_resp = self.cost_explorer.get_cost_and_usage(
+                TimePeriod={'Start': first_day, 'End': tomorrow},
+                Granularity='MONTHLY',
+                Metrics=['UnblendedCost'],
+                Filter={'Dimensions': {'Key': 'RECORD_TYPE', 'Values': ['Usage']}}
+            )
+
+            # Actual usage today
+            actual_today_resp = self.cost_explorer.get_cost_and_usage(
+                TimePeriod={'Start': today, 'End': tomorrow},
+                Granularity='DAILY',
+                Metrics=['UnblendedCost'],
+                Filter={'Dimensions': {'Key': 'RECORD_TYPE', 'Values': ['Usage']}}
+            )
+
+            credits_month = abs(float(
+                month_credits_resp['ResultsByTime'][0]['Total']['UnblendedCost']['Amount']
+            )) if month_credits_resp['ResultsByTime'] else 0.0
+
+            credits_today = abs(float(
+                today_credits_resp['ResultsByTime'][0]['Total']['UnblendedCost']['Amount']
+            )) if today_credits_resp['ResultsByTime'] else 0.0
+
+            actual_month = float(
+                actual_resp['ResultsByTime'][0]['Total']['UnblendedCost']['Amount']
+            ) if actual_resp['ResultsByTime'] else 0.0
+
+            actual_today = float(
+                actual_today_resp['ResultsByTime'][0]['Total']['UnblendedCost']['Amount']
+            ) if actual_today_resp['ResultsByTime'] else 0.0
+
+            has_credits = credits_month > 0
+
+            return {
+                'has_credits': has_credits,
+                'credits_used_today': round(credits_today, 2),
+                'credits_used_month': round(credits_month, 2),
+                'actual_cost_today': round(actual_today, 2),
+                'actual_cost_month': round(actual_month, 2),
+                'billed_today': round(max(0, actual_today - credits_today), 2),
+                'billed_month': round(max(0, actual_month - credits_month), 2),
+            }
+
+        except Exception as e:
+            print(f"Error fetching credits info: {e}")
+            return {'has_credits': False}
+
     def get_today_cost(self):
         """Get today's total AWS spending in USD"""
         try:
